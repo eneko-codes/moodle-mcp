@@ -5,7 +5,8 @@ import MCP
 /// called, and the name it is listed under is the label on the permission switch in
 /// Claude Desktop.
 ///
-/// Every tool only reads, so none carries a verb prefix. There is deliberately no generic
+/// Every tool but `file_download` only reads from Moodle, and that one writes only a local
+/// file, so none carries a verb prefix. There is deliberately no generic
 /// "call a web-service function" tool: each tool names its functions in code.
 public enum ToolCatalog {
 
@@ -161,11 +162,12 @@ public enum ToolCatalog {
         description: """
             Read-only. Calendar action events (deadlines, things to do) of the allowed \
             courses between two moments, sorted by date. Defaults: from now to 30 days \
-            ahead. Events of other courses are dropped.
+            ahead. Events of other courses are dropped. At most 200 events per call; \
+            truncated: true means there were more, so narrow the range.
             """,
         inputSchema: object(properties: [
             "from": string("Start, inclusive. \(DateArgument.help) Omit for now."),
-            "to": string("End, inclusive. \(DateArgument.help) Omit for 30 days after now."),
+            "to": string("End, inclusive; a bare date includes that whole day. \(DateArgument.help) Omit for 30 days after now."),
         ]),
         annotations: readOnly
     )
@@ -201,7 +203,7 @@ public enum ToolCatalog {
         name: forumDiscussionsName,
         title: "Forum discussions",
         description: """
-            Read-only. One page of a forum's discussions, latest activity first: \
+            Read-only. One page of a forum's discussions, pinned first, then latest activity: \
             discussionid, subject, author, dates, last poster, replies, unread count and \
             the first message (plain text, HTML apart). Then discussion_posts with a \
             discussionid. Cannot post.
@@ -249,8 +251,9 @@ public enum ToolCatalog {
         title: "Conversation messages",
         description: """
             Read-only. Messages of one conversation, newest first, with sender, date \
-            and text (plain, HTML apart). Does not mark them read. Cannot send: messages \
-            to teachers are sent by the person from the site.
+            and text (plain, HTML apart). Only conversations among the 500 most recent \
+            that conversations_list shows can be opened. Does not mark them read. Cannot \
+            send: messages to teachers are sent by the person from the site.
             """,
         inputSchema: object(
             properties: [

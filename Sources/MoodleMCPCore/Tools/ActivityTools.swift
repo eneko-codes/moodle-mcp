@@ -108,7 +108,7 @@ extension MoodleTools {
     func events(_ arguments: Arguments) async throws(MoodleError) -> String {
         let now = Int(Date().timeIntervalSince1970)
         let from = try arguments.string("from").map { text throws(MoodleError) in try DateArgument.parse(text, name: "from") } ?? now
-        let to = try arguments.string("to").map { text throws(MoodleError) in try DateArgument.parse(text, name: "to") } ?? now + 30 * 86_400
+        let to = try arguments.string("to").map { text throws(MoodleError) in try DateArgument.parse(text, name: "to", endOfDay: true) } ?? now + 30 * 86_400
         guard to >= from else { throw .badArgument(name: "to", reason: "is earlier than 'from'.") }
         guard !session.scope.allowed.isEmpty else { throw .noAllowedCourses }
         let names = Dictionary(uniqueKeysWithValues: try await session.allowedCourses().map { ($0.id, $0.fullname) })

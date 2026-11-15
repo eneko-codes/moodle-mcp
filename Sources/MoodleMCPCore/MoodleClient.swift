@@ -53,7 +53,7 @@ public struct URLSessionTransport: HTTPTransport {
         configuration.urlCache = nil
         configuration.httpShouldSetCookies = false
         configuration.httpAdditionalHeaders = ["User-Agent": "moodle-mcp"]
-        session = URLSession(configuration: configuration)
+        session = URLSession(configuration: configuration, delegate: SameOriginRedirects(), delegateQueue: nil)
     }
 
     public func post(_ url: URL, body: Data) async throws -> (Data, Int) {
@@ -69,6 +69,30 @@ public struct URLSessionTransport: HTTPTransport {
         let (data, response) = try await session.data(from: url)
         let http = response as? HTTPURLResponse
         return (data, http?.statusCode ?? 0, http?.value(forHTTPHeaderField: "Content-Type"))
+    }
+}
+
+/// URLSession follows redirects anywhere by default, and a 307 or 308 resends the POST
+/// body — the token, or the password at login — to wherever `Location` points. Only a
+/// redirect that stays on the same https origin is followed; any other is refused, and the
+/// 3xx itself comes back as the answer (an HTTP status error).
+final class SameOriginRedirects: NSObject, URLSessionTaskDelegate, Sendable {
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest
+    ) async -> URLRequest? {
+        RedirectPolicy.allows(from: task.originalRequest?.url, to: request.url) ? request : nil
+    }
+}
+
+public enum RedirectPolicy {
+    public static func allows(from original: URL?, to target: URL?) -> Bool {
+        guard let original, let target else { return false }
+        return target.scheme?.lowercased() == "https"
+            && original.scheme?.lowercased() == "https"
+            && target.host?.lowercased() == original.host?.lowercased()
+            && (target.port ?? 443) == (original.port ?? 443)
+            && target.user == nil && target.password == nil
     }
 }
 
@@ -163,15 +187,24 @@ public final class MoodleClient: Sendable {
     /// course. The token is added here, to a copy of the URL that never leaves this
     /// function; files go through `/webservice/pluginfile.php`, which accepts it.
     public func downloadFile(_ fileURL: URL) async throws(MoodleError) -> Data {
-        guard var components = URLComponents(url: fileURL, resolvingAgainstBaseURL: false) else {
-            throw .badArgument(name: "url", reason: "not a URL.")
+        // Checked again here, so no caller can hand this function a URL that would carry
+        // the token anywhere but this site's pluginfile.php.
+        guard Self.pluginfileContext(of: fileURL, site: siteURL) != nil,
+            var components = URLComponents(url: fileURL, resolvingAgainstBaseURL: false)
+        else {
+            throw .badArgument(name: "url", reason: "only file URLs of this Moodle site (…/pluginfile.php/…) can be downloaded.")
         }
-        if components.path.contains("/pluginfile.php/"), !components.path.contains("/webservice/pluginfile.php/") {
-            components.path = components.path.replacingOccurrences(of: "/pluginfile.php/", with: "/webservice/pluginfile.php/")
+        let sitePath = Self.sitePath(siteURL)
+        let plain = sitePath + "/pluginfile.php/"
+        if components.percentEncodedPath.hasPrefix(plain) {
+            components.percentEncodedPath = sitePath + "/webservice/pluginfile.php/"
+                + components.percentEncodedPath.dropFirst(plain.count)
         }
         let token = try tokenStore.readToken()
-        components.queryItems = (components.queryItems ?? []).filter { $0.name != "token" && $0.name != "wstoken" }
-            + [URLQueryItem(name: "token", value: token)]
+        // The caller's query and fragment are dropped: the file is named by its path, and
+        // nothing a caller adds may ride along with the token.
+        components.fragment = nil
+        components.queryItems = [URLQueryItem(name: "token", value: token)]
         guard let authorised = components.url else { throw .badArgument(name: "url", reason: "not a URL.") }
 
         var attempt = 1
@@ -193,6 +226,44 @@ public final class MoodleClient: Sendable {
                 await sleep(retryDelay)
             }
         }
+    }
+
+    /// The pluginfile context of a file URL of this site, or nil when the URL is not one
+    /// this program may fetch: https on the site's own host and port, no user info, a path
+    /// that is exactly `<site path>/pluginfile.php/<context>/…` or
+    /// `<site path>/webservice/pluginfile.php/<context>/…`, and no `.`, `..`, empty or
+    /// percent-encoded separator or dot segment. Foundation keeps `..` in a URL's path
+    /// unnormalised, and the web server would resolve it after this check, so
+    /// `pluginfile.php/501/../999/…` would otherwise pass as context 501.
+    public static func pluginfileContext(of url: URL, site: URL) -> Int? {
+        guard url.scheme?.lowercased() == "https", site.scheme?.lowercased() == "https",
+            let host = url.host?.lowercased(), host == site.host?.lowercased(),
+            (url.port ?? 443) == (site.port ?? 443),
+            url.user == nil, url.password == nil,
+            let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        else { return nil }
+        let raw = components.percentEncodedPath
+        let lowered = raw.lowercased()
+        guard !lowered.contains("%2f"), !lowered.contains("%5c"), !lowered.contains("%2e"), !raw.contains("\\") else {
+            return nil
+        }
+        let segments = raw.split(separator: "/", omittingEmptySubsequences: false).dropFirst().map(String.init)
+        guard !segments.contains(where: { $0.isEmpty || $0 == "." || $0 == ".." }) else { return nil }
+        let siteSegments = sitePath(site).split(separator: "/").map(String.init)
+        guard segments.starts(with: siteSegments) else { return nil }
+        var rest = Array(segments.dropFirst(siteSegments.count))
+        if rest.first == "webservice" { rest.removeFirst() }
+        // At least the context and one more segment (component, file area, file name…).
+        guard rest.count >= 3, rest[0] == "pluginfile.php" else { return nil }
+        return Int(rest[1])
+    }
+
+    /// The site's path as it appears in a percent-encoded URL path, without a trailing
+    /// slash; empty for a site at the root of its host.
+    static func sitePath(_ site: URL) -> String {
+        var path = URLComponents(url: site, resolvingAgainstBaseURL: false)?.percentEncodedPath ?? ""
+        while path.hasSuffix("/") { path.removeLast() }
+        return path
     }
 
     /// A refused download comes back as HTTP 200 with a JSON error body (or an HTML error
@@ -302,7 +373,7 @@ public final class MoodleClient: Sendable {
             object["exception"] != nil || (object["errorcode"] != nil && object["token"] == nil)
         else { return }
         let errorCode = object["errorcode"] as? String ?? "unknown"
-        if errorCode == "invalidtoken" || errorCode == "accessexception" { throw .tokenInvalid }
+        if ["invalidtoken", "invalidtimedtoken", "accessexception"].contains(errorCode) { throw .tokenInvalid }
         let message = object["message"] as? String ?? object["error"] as? String ?? "no message"
         throw .moodleException(errorCode: errorCode, message: Redaction.scrub(message))
     }

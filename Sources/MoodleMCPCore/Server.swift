@@ -4,7 +4,7 @@ import MCP
 public enum MoodleMCPServer {
 
     public static let name = "moodle-mcp"
-    public static let version = "0.2.0"
+    public static let version = "0.2.1"
 
     /// Returned from `initialize`: what per-tool descriptions cannot say once.
     public static let instructions = """
@@ -42,8 +42,11 @@ public enum MoodleMCPServer {
         paced, so asking for every course at once takes a while; pass a courseid when one \
         course is enough.
 
-        An error starting with TOKEN_INVALIDO means the token expired or was revoked: tell \
-        the person to run `moodle-mcp login` in Terminal. Nothing else fixes it.
+        An error starting with TOKEN_INVALIDO means Moodle refused the token: it expired, \
+        was revoked, or its service lacks access to a function. Tell the person to run \
+        `moodle-mcp login` in Terminal. If it persists after a new login, moodle_status \
+        lists any needed function the site does not grant, which only the site's \
+        administrators can change.
         """
 
     public static func run(

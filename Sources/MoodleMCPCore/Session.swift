@@ -6,6 +6,7 @@ public actor MoodleSession {
     public let client: MoodleClient
     public let scope: CourseScope
     private var cachedSiteInfo: SiteInfo?
+    private var cachedEnrolledCourses: [EnrolledCourse]?
     private var cachedAllowedCourses: [EnrolledCourse]?
     private var cachedContents: [Int: JSON] = [:]
 
@@ -26,8 +27,20 @@ public actor MoodleSession {
     /// Every enrolled course, unfiltered. Only `allowedCourses` and the discovery command
     /// may see this list; tools never render it directly.
     func enrolledCourses() async throws(MoodleError) -> [EnrolledCourse] {
+        if let cachedEnrolledCourses { return cachedEnrolledCourses }
         let userID = try await userID()
-        return try await client.call(.usersCourses, [.int("userid", userID)])
+        let courses: [EnrolledCourse] = try await client.call(.usersCourses, [.int("userid", userID)])
+        cachedEnrolledCourses = courses
+        return courses
+    }
+
+    /// Full names of allowed courses that no other enrolled course shares. A group
+    /// conversation names its course only by full name, so a name two courses share (last
+    /// year's edition, say) cannot tell them apart and is not trusted.
+    public func uniqueAllowedCourseNames() async throws(MoodleError) -> Set<String> {
+        let enrolled = try await enrolledCourses()
+        let othersNames = Set(enrolled.filter { !scope.contains($0.id) }.compactMap(\.fullname))
+        return Set(try await allowedCourses().compactMap(\.fullname)).subtracting(othersNames)
     }
 
     public func allowedCourses() async throws(MoodleError) -> [EnrolledCourse] {

@@ -68,10 +68,7 @@ extension MoodleTools {
         // The file must belong to a module of this course: its pluginfile context must be
         // one of the course's module contexts. Host and path are checked first so nothing
         // but this site's pluginfile.php ever receives the token.
-        let site = session.client.siteURL
-        guard url.scheme == "https", url.host?.lowercased() == site.host?.lowercased(),
-            let contextID = Self.pluginfileContext(url)
-        else {
+        guard let contextID = MoodleClient.pluginfileContext(of: url, site: session.client.siteURL) else {
             throw .badArgument(name: "url", reason: "only file URLs of this Moodle site (…/pluginfile.php/…) can be downloaded.")
         }
         let index = try await session.moduleIndex()
@@ -92,13 +89,6 @@ extension MoodleTools {
         ]))
     }
 
-    /// `/webservice/pluginfile.php/<context>/…` or `/pluginfile.php/<context>/…`.
-    static func pluginfileContext(_ url: URL) -> Int? {
-        let parts = url.path.split(separator: "/")
-        guard let index = parts.firstIndex(of: "pluginfile.php"), index + 1 < parts.count else { return nil }
-        return Int(parts[index + 1])
-    }
-
     /// A single path component: no separators, no leading dot, nothing a shell or Finder
     /// would mistake for structure.
     static func safeName(_ raw: String) -> String? {
@@ -108,7 +98,9 @@ extension MoodleTools {
         }
         var name = String(cleaned).trimmingCharacters(in: .whitespacesAndNewlines)
         while name.hasPrefix(".") { name.removeFirst() }
-        name = String(name.prefix(180))
+        // APFS allows 255 bytes per name; leave room for a " (999)" suffix. Cut by whole
+        // characters so a multi-byte one is never split.
+        while name.utf8.count > 240 { name.removeLast() }
         return name.isEmpty ? nil : name
     }
 

@@ -42,14 +42,16 @@ public enum CommandLineInterface {
     }
 
     public static let usage = """
-        moodle-mcp                 run the MCP server on stdio (what Claude starts)
+        moodle-mcp [serve]         run the MCP server on stdio (what Claude starts)
         moodle-mcp selftest        check the token without any dialog; print release, user id, allowed courses
         moodle-mcp selftest --discover [--category ID]
-                                   propose your courses in that category and, once confirmed, save them as the allowed list
+                                   propose your courses in that category and, once confirmed, save them as the allowed list;
+                                   --category can be left out once a category has been saved
         moodle-mcp login [--account NAME]
                                    ask for the site (first time), username and password without echo; store the token
         moodle-mcp import-token [--account NAME]
                                    rewrite an existing Keychain item so this program is its trusted application
+        moodle-mcp help            show this text
         """
 
     // MARK: selftest

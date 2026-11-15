@@ -74,7 +74,8 @@ A local MCP server (Swift 6, stdio transport) for Moodle's REST web-service API
   developer documentation; its shape (`token`/`privatetoken`, or `error`/`errorcode`) is
   handled in `MoodleClient.requestToken`.
 - [URLSession](https://developer.apple.com/documentation/foundation/urlsession), ephemeral,
-  30 s per request, one request at a time and at least 500 ms between starts.
+  30 s per request, one request at a time and at least 500 ms between starts. Redirects
+  are followed only within the same https host and port (`SameOriginRedirects`).
 - [Keychain Services](https://developer.apple.com/documentation/security/keychain-services):
   `SecItemCopyMatching`, `SecItemAdd`, `SecItemDelete`,
   `SecKeychainSetUserInteractionAllowed`.
@@ -85,8 +86,8 @@ A local MCP server (Swift 6, stdio transport) for Moodle's REST web-service API
 `moodle_status`, `courses_list`, `course_contents`, `file_download`, `assignments_list`,
 `quizzes_list`, `events_list`, `notifications_list`, `forums_list`, `forum_discussions`,
 `discussion_posts`, `conversations_list`, `conversation_get`, `grades_get`,
-`profile_get`. One tool per thing the site holds, named like the owner's other servers
-(English snake_case, `_list` / `_get`). Answers are JSON built field by field from `Out`;
+`profile_get`. One tool per thing the site holds, named in English snake_case with
+`_list` / `_get` suffixes. Answers are JSON built field by field from `Out`;
 nothing Moodle sends reaches an answer unless a tool names it.
 
 Course filtering where Moodle's answer does not say the course:
@@ -94,8 +95,9 @@ Course filtering where Moodle's answer does not say the course:
   an allowed course, checked before asking.
 - `discussion_posts`: Moodle's answer carries `courseid`; outside the list, refused.
 - `conversations_list` / `conversation_get`: group conversations (type 2) are kept only
-  when `subname` is an allowed course's full name; individual and self conversations
-  belong to no course and are kept. `conversation_get` only opens an id the list shows.
+  when `subname` is the full name of an allowed course that no other enrolled course
+  shares; individual and self conversations belong to no course and are kept.
+  `conversation_get` only opens an id among the first 500 the list shows.
 - `notifications_list`: attributed by `customdata` (`courseid`, `cmid`) or the context
   URL (`course/view.php?id=`, `course=`/`courseid=`, a module page of an allowed course);
   anything else is hidden and only counted.

@@ -34,7 +34,7 @@ Not affiliated with, endorsed by, or connected to Moodle Pty Ltd.
 | `file_download` | local write | the file URL, via `webservice/pluginfile.php` | Saves one course file under `~/Downloads/moodle-mcp/<course>/`; path, size, SHA-256 |
 | `assignments_list` | read | `mod_assign_get_assignments`, `mod_assign_get_submission_status` | Dates, maximum grade, introduction, your submission's status, your grade |
 | `quizzes_list` | read | `mod_quiz_get_quizzes_by_courses`, `mod_quiz_get_user_attempts` | Dates, time limit, attempts allowed, your attempts' state and grade — never questions |
-| `events_list` | read | `core_calendar_get_action_events_by_timesort` | Action events (deadlines) between two dates |
+| `events_list` | read | `core_calendar_get_action_events_by_timesort` | Action events (deadlines) between two dates, at most 200 per call |
 | `notifications_list` | read | `message_popup_get_popup_notifications` | Your notifications attributable to an allowed course |
 | `forums_list` | read | `mod_forum_get_forums_by_courses` | Forums with discussion and unread counts |
 | `forum_discussions` | read | `mod_forum_get_forum_discussions` | One page of a forum's discussions |
@@ -52,7 +52,8 @@ in a field ending in `_html`. File URLs never carry the token.
 
 ## Frameworks and APIs
 
-Apple frameworks plus the MCP Swift SDK; nothing else.
+Apple frameworks plus the MCP Swift SDK, which brings its own dependencies (SwiftNIO,
+swift-log and others, pinned in `Package.resolved`).
 
 | Used | For | Reference |
 |---|---|---|
@@ -78,12 +79,15 @@ Apple frameworks plus the MCP Swift SDK; nothing else.
   conversations, forums) are filtered first; other courses are never shown, not even their
   names.
 - **One local write.** `file_download` saves into `~/Downloads/moodle-mcp/<course>/` and
-  nowhere else, never overwrites, and only fetches `pluginfile.php` URLs of this site that
-  belong to a module of the course named.
+  nowhere else, never overwrites, and only fetches `<site>/pluginfile.php/<context>/…` URLs
+  of this site's own host and port whose context is a module of the course named; `..`,
+  encoded separators and any query the caller added are refused or dropped.
 - **The token stays put.** It goes in the request body, never a URL. No answer, error or log
   line carries it; `userprivateaccesskey` is dropped from every answer.
-- **Polite.** One request at a time, about two a second at most, one retry on a network
-  failure or `servicenotavailable`.
+- **Polite.** One request at a time, about two a second at most, and one retry after 2 s on
+  a network failure, HTTP 502/503/504 or `servicenotavailable`, downloads included.
+- **No detours.** A redirect is followed only within the site's own https host and port;
+  any other is refused, so the token and the password cannot be resent elsewhere.
 
 ## Install
 
@@ -117,7 +121,8 @@ The password is sent once to `login/token.php` and never stored. The site, the a
 and the course ids go to `~/Library/Application Support/moodle-mcp/config.json` (mode
 `0600`).
 
-When a tool answers `TOKEN_INVALIDO`, the token expired or was revoked: run `login` again.
+When a tool answers `TOKEN_INVALIDO`, Moodle refused the token: run `login` again. If it
+persists, `moodle_status` lists any function the site withholds from the mobile service.
 
 ### Signing, and why it is not optional
 

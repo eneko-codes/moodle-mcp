@@ -59,6 +59,8 @@ public enum ForbiddenFunctions {
         "mod_forum_add_discussion", "mod_forum_add_discussion_post",
         // Completion.
         "core_completion_update_activity_completion_status_manually",
+        // Calls any other function by name: a generic call path in disguise.
+        "tool_mobile_call_external_functions",
     ]
 
     /// Families refused by shape: any view logger, any mark-as-read, any user update.
@@ -71,6 +73,8 @@ public enum ForbiddenFunctions {
         let writeVerbs = [
             "_save_", "_submit_", "_send_", "_add_", "_delete_", "_update_", "_create_",
             "_upload", "_start_attempt", "_process_attempt", "_get_attempt_",
+            "_set_", "_toggle_", "_mute_", "_unmute_", "_block_", "_unblock_", "_override_",
+            "_remove_", "_accept_", "_decline_", "_confirm_", "_reset_", "_call_external_",
         ]
         return writeVerbs.contains { name.contains($0) }
     }

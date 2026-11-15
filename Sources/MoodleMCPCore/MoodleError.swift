@@ -4,8 +4,9 @@ import Foundation
 /// command line prints; it never carries the token (it is built from fixed text plus
 /// values that cannot hold it, and `Redaction` scrubs it again on the way out).
 public enum MoodleError: Error, Equatable, Sendable {
-    /// Moodle refused the token (`invalidtoken`) or the token's service lacks access
-    /// (`accessexception`). The fix is always a new token.
+    /// Moodle refused the token (`invalidtoken`, `invalidtimedtoken`) or the token's
+    /// service lacks access (`accessexception`). A new token is the usual fix; when it is
+    /// not, `moodle_status` shows which functions the site withholds.
     case tokenInvalid
     /// No token in the Keychain yet.
     case tokenMissing

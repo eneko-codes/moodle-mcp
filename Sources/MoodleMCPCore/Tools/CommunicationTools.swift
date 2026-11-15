@@ -91,12 +91,12 @@ extension MoodleTools {
     /// Conversation types in Moodle.
     static let conversationTypes = [1: "individual", 2: "group", 3: "self"]
 
-    /// Group conversations belong to a course group and carry the course's name as
-    /// `subname`; those of other courses are dropped. Individual and self conversations
-    /// belong to no course and are kept.
+    /// Group conversations belong to a course group and carry the course's full name as
+    /// `subname`; only those naming an allowed course that no other enrolled course shares
+    /// are kept. Individual and self conversations belong to no course and are kept.
     private func visibleConversations(limit: Int, offset: Int) async throws(MoodleError) -> [JSON] {
         let userID = try await session.userID()
-        let allowedNames = Set(try await session.allowedCourses().compactMap(\.fullname))
+        let allowedNames = try await session.uniqueAllowedCourseNames()
         let answer: JSON
         do {
             answer = try await session.client.callJSON(

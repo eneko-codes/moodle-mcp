@@ -75,7 +75,9 @@ public enum DateArgument {
     public static let help =
         "Accepts 2026-11-20 (midnight, Europe/Madrid), 2026-11-20T09:00 (Europe/Madrid) or 2026-11-20T09:00:00+01:00."
 
-    public static func parse(_ text: String, name: String) throws(MoodleError) -> Int {
+    /// `endOfDay` makes a bare date mean the last second of that day, so an inclusive end
+    /// such as `to=2026-11-20` keeps a deadline at 23:59 on the 20th.
+    public static func parse(_ text: String, name: String, endOfDay: Bool = false) throws(MoodleError) -> Int {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         if let date = try? Date(trimmed, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: false)) {
             return Int(date.timeIntervalSince1970)
@@ -95,6 +97,9 @@ public enum DateArgument {
         components.second = match.6.flatMap { Int($0) } ?? 0
         guard let date = calendar.date(from: components), calendar.component(.day, from: date) == components.day else {
             throw .badArgument(name: name, reason: "'\(trimmed)' is not a real date. \(help)")
+        }
+        if endOfDay, match.4 == nil, let next = calendar.date(byAdding: .day, value: 1, to: date) {
+            return Int(next.timeIntervalSince1970) - 1
         }
         return Int(date.timeIntervalSince1970)
     }

@@ -64,11 +64,21 @@ public struct Configuration: Codable, Equatable, Sendable {
     /// falling back would discard the confirmed course list.
     public static func load(from url: URL = defaultURL) throws(MoodleError) -> Configuration {
         guard FileManager.default.fileExists(atPath: url.path) else { return Configuration() }
+        var configuration: Configuration
         do {
-            return try JSONDecoder().decode(Configuration.self, from: Data(contentsOf: url))
+            configuration = try JSONDecoder().decode(Configuration.self, from: Data(contentsOf: url))
         } catch {
             throw .configuration("\(url.path) could not be read as configuration.")
         }
+        // The same rule as at the login prompt: a site edited into the file by hand must
+        // not send the password or the token over plain http.
+        if let site = configuration.siteURL {
+            guard let checked = try? parseSiteURL(site.absoluteString) else {
+                throw .configuration("siteURL in \(url.path) must be the site's https:// address.")
+            }
+            configuration.siteURL = checked
+        }
+        return configuration
     }
 
     /// The directory is created `0700` and the file written `0600`: the account name and

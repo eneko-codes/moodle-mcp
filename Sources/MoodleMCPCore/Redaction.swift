@@ -19,11 +19,17 @@ public enum Redaction {
         // Only the separator that belonged to the token parameter goes with it, so a lone
         // `&` or `?` in ordinary text is never touched.
         // `?token=abc&x=1` → `?x=1`, `&token=abc&x=1` → `&x=1`:
+        // Any case, `&amp;` (HTML fields), `#`, and percent-encoded `?`, `&` and `=` count.
+        // A value stops at `%` and `\` too: tokens are hex, and a JSON-escaped quote must
+        // survive.
+        let separator = #"(?:&amp;|[?&#]|%3F|%26)"#
+        let parameter = #"(?:ws)?token(?:=|%3D)[^&#%\\\s"'<>()]*"#
         result = result.replacingOccurrences(
-            of: #"([?&])(?:ws)?token=[^&#\s"'<>()]*&"#, with: "$1", options: .regularExpression)
+            of: "(\(separator))\(parameter)(?:&amp;|&|%26)", with: "$1",
+            options: [.regularExpression, .caseInsensitive])
         // `?token=abc` or `&token=abc` as the last parameter: the separator goes too.
         result = result.replacingOccurrences(
-            of: #"[?&](?:ws)?token=[^&#\s"'<>()]*"#, with: "", options: .regularExpression)
+            of: separator + parameter, with: "", options: [.regularExpression, .caseInsensitive])
         result = result.replacingOccurrences(
             of: #""?userprivateaccesskey"?\s*[:=]\s*"?[A-Za-z0-9]*"?"#, with: "",
             options: [.regularExpression, .caseInsensitive])
@@ -34,7 +40,7 @@ public enum Redaction {
     public static func stripToken(from url: String) -> String {
         guard var components = URLComponents(string: url) else { return scrub(url) }
         components.queryItems = components.queryItems?.filter {
-            $0.name != "token" && $0.name != "wstoken"
+            !["token", "wstoken"].contains($0.name.lowercased())
         }
         if components.queryItems?.isEmpty == true { components.queryItems = nil }
         return components.string ?? scrub(url)
