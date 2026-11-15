@@ -1,0 +1,6 @@
+.build/
+.swiftpm/
+dist/
+extension/server/
+.DS_Store
+*.local.json

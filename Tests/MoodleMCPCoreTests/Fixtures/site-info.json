@@ -1,0 +1,110 @@
+{
+ "sitename": "Aula Virtual de Ejemplo",
+ "username": "user",
+ "firstname": "Test",
+ "lastname": "User",
+ "fullname": "Test User",
+ "lang": "es",
+ "userid": 1001,
+ "siteurl": "https://moodle.example.test",
+ "userpictureurl": "https://moodle.example.test/theme/image.php/boost/core/1/u/f1",
+ "functions": [
+  {
+   "name": "core_webservice_get_site_info",
+   "version": "2024100700"
+  },
+  {
+   "name": "core_enrol_get_users_courses",
+   "version": "2024100700"
+  },
+  {
+   "name": "core_course_get_contents",
+   "version": "2024100700"
+  },
+  {
+   "name": "mod_assign_get_assignments",
+   "version": "2024100700"
+  },
+  {
+   "name": "mod_assign_get_submission_status",
+   "version": "2024100700"
+  },
+  {
+   "name": "mod_quiz_get_quizzes_by_courses",
+   "version": "2024100700"
+  },
+  {
+   "name": "mod_quiz_get_user_attempts",
+   "version": "2024100700"
+  },
+  {
+   "name": "core_calendar_get_action_events_by_timesort",
+   "version": "2024100700"
+  },
+  {
+   "name": "mod_forum_get_forums_by_courses",
+   "version": "2024100700"
+  },
+  {
+   "name": "mod_forum_get_forum_discussions",
+   "version": "2024100700"
+  },
+  {
+   "name": "mod_forum_get_discussion_posts",
+   "version": "2024100700"
+  },
+  {
+   "name": "core_message_get_conversations",
+   "version": "2024100700"
+  },
+  {
+   "name": "core_message_get_conversation_messages",
+   "version": "2024100700"
+  },
+  {
+   "name": "message_popup_get_popup_notifications",
+   "version": "2024100700"
+  },
+  {
+   "name": "gradereport_user_get_grade_items",
+   "version": "2024100700"
+  },
+  {
+   "name": "core_user_get_users_by_field",
+   "version": "2024100700"
+  },
+  {
+   "name": "mod_quiz_start_attempt",
+   "version": "2024100700"
+  },
+  {
+   "name": "core_course_view_course",
+   "version": "2024100700"
+  },
+  {
+   "name": "mod_assign_save_submission",
+   "version": "2024100700"
+  }
+ ],
+ "downloadfiles": 1,
+ "uploadfiles": 1,
+ "release": "4.5.15+ (Build: 20261021)",
+ "version": "2024100715.00",
+ "mobilecssurl": "",
+ "advancedfeatures": [
+  {
+   "name": "usecomments",
+   "value": 1
+  }
+ ],
+ "usercanmanageownfiles": true,
+ "userquota": 0,
+ "usermaxuploadfilesize": -1,
+ "userhomepage": 1,
+ "userprivateaccesskey": "FAKEprivatekey0000000000000000",
+ "siteid": 1,
+ "sitecalendartype": "gregorian",
+ "theme": "boost",
+ "limitconcurrentlogins": 0,
+ "policyagreed": 1
+}
