@@ -170,8 +170,13 @@ switches. Do not do both at once: two registrations under the same name collide.
   mobile app sessions on the site and run `login` again.
 - **Moodle records that you connected.** Any web-service call usually updates your
   account's "last access". Nothing here marks anything viewed, read or completed.
-- **Messaging may be off.** On a site with internal messaging disabled the conversation tools
-  answer `MESSAGING_DISABLED`. Third-party mail plugins are not covered.
+- **Messaging may be off.** On a site with Moodle's messaging disabled the conversation
+  tools answer `MESSAGING_DISABLED`, and there is nothing to read.
+- **Internal mail plugins are out of reach.** A plugin such as `local_mail` declares its
+  functions for the browser only, not for the mobile web service the token belongs to, so
+  the token cannot call them. Only the site's administrators could add them to that
+  service; reading the mail through the web pages instead would need the password and
+  would mark messages as read.
 - **Dates are fixed to Europe/Madrid.**
 - **Checked against Moodle 4.5.** Functions and their side effects were checked in the
   `MOODLE_405_STABLE` source; re-check after the site upgrades.

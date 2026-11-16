@@ -4,7 +4,7 @@ import MCP
 public enum MoodleMCPServer {
 
     public static let name = "moodle-mcp"
-    public static let version = "0.2.2"
+    public static let version = "0.2.3"
 
     /// Returned from `initialize`: what per-tool descriptions cannot say once.
     public static let instructions = """
@@ -35,7 +35,9 @@ public enum MoodleMCPServer {
         due between two dates; grades_get for the grade book. forums_list, then \
         forum_discussions, then discussion_posts; conversations_list, then \
         conversation_get (MESSAGING_DISABLED means the site has internal messaging \
-        off, so there is nothing to read there); notifications_list. Reading never marks anything as read. \
+        off, so there is nothing to read there; an internal mail plugin such as \
+        local_mail is not reachable at all, because its functions are not in the mobile \
+        web service the token belongs to); notifications_list. Reading never marks anything as read. \
         profile_get gives only custom profile fields and the city.
 
         assignments_list and quizzes_list make one request per activity and requests are \
