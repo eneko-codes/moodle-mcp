@@ -15,7 +15,7 @@ extension MoodleTools {
                 "name": item["itemtype"].string == "course" && item["itemname"].isNull ? .string("Course total") : .str(item["itemname"]),
                 "type": .str(item["itemtype"]), "module": .str(item["itemmodule"]), "cmid": .int(item["cmid"]),
                 "grade": .str(item["gradeformatted"]), "grade_raw": .number(item["graderaw"]),
-                "range": .str(item["rangeformatted"]), "min": .number(item["grademin"]), "max": .number(item["grademax"]),
+                "range": item["rangeformatted"].string.map { .string(HTMLText.decodeEntities($0)) } ?? .null, "min": .number(item["grademin"]), "max": .number(item["grademax"]),
                 "percentage": .str(item["percentageformatted"]), "weight": .str(item["weightformatted"]),
                 "submitted": .date(item["gradedatesubmitted"]), "graded": .date(item["gradedategraded"]),
             ]

@@ -12,6 +12,10 @@ public enum HTMLText {
         // Content that is never text.
         text = replace(#"(?is)<(script|style)\b.*?</\1>"#, in: text, with: "")
         text = replace(#"(?s)<!--.*?-->"#, in: text, with: "")
+        // As in a browser, line breaks and runs of spaces in the source are one space;
+        // only the markup below makes new lines. Without this, the indentation of an
+        // e-mail template (notifications) comes out as dozens of blank lines.
+        text = replace(#"[ \t\r\n]+"#, in: text, with: " ")
         // Links: keep the target. Inner tags are stripped later with everything else.
         text = replace(
             #"(?is)<a\b[^>]*?\bhref\s*=\s*["']([^"']*)["'][^>]*>(.*?)</a>"#, in: text,
@@ -26,8 +30,9 @@ public enum HTMLText {
         text = replace(#"(?s)<[^>]+>"#, in: text, with: "")
         text = decodeEntities(text)
         // Tidy whitespace: no trailing spaces, at most one blank line.
-        text = replace(#"[ \t\u{00A0}]+\n"#, in: text, with: "\n")
-        text = replace(#"[ \u{00A0}]{2,}"#, in: text, with: " ")
+        text = replace(#"[ \t\x{00A0}]+\n"#, in: text, with: "\n")
+        text = replace(#"\n[ \x{00A0}]+"#, in: text, with: "\n")
+        text = replace(#"[ \x{00A0}]{2,}"#, in: text, with: " ")
         text = replace(#"\n{3,}"#, in: text, with: "\n\n")
         // Link targets in the text are file URLs too.
         return Redaction.scrub(text.trimmingCharacters(in: .whitespacesAndNewlines))

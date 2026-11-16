@@ -153,4 +153,24 @@ struct HardeningTests {
         #expect(!text.contains("Grupo A"))
         #expect(text.contains("\"id\" : 80"))
     }
+
+    @Test("Indented template HTML collapses to its text, with no runs of blank lines")
+    func templateWhitespace() {
+        let html = "<div class=\"navbar\">\n    <a href=\"https://a.test/c\">CURSO</a>\n        &raquo;\n        Foros\n</div>\n\n<table>\n    <tr>\n        <td>\n            <div>Buenos días <br />\r\n<br />\r\nUn saludo</div>\n        </td>\n    </tr>\n</table>"
+        let text = HTMLText.plain(html)
+        #expect(text == "CURSO (https://a.test/c) » Foros\n\nBuenos días\n\nUn saludo")
+        #expect(!text.contains("\r"))
+    }
+
+    @Test("A grade range comes with its entities decoded")
+    func gradeRange() async throws {
+        let transport = FakeTransport([
+            "core_webservice_get_site_info": [.body(try fixture("site-info"))],
+            "core_enrol_get_users_courses": [.body(try fixture("users-courses"))],
+            "gradereport_user_get_grade_items": [json(#"{"usergrades":[{"courseid":9001,"userid":1001,"gradeitems":[{"id":1,"itemname":"Tarea","itemtype":"mod","rangeformatted":"0,00&ndash;10,00","grademin":0,"grademax":10}]}]}"#)],
+        ])
+        let (text, isError) = await call(tools(transport), ToolCatalog.gradesName, ["courseid": .int(9001)])
+        #expect(!isError, "\(text)")
+        #expect(text.contains("\"range\" : \"0,00–10,00\""))
+    }
 }
