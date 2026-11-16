@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "moodle-mcp",
   "display_name": "Moodle",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Read one Moodle site through its web-service API, limited to an allow-list of courses. It cannot start or see quiz attempts, submit, post, send, mark as read or record a view",
   "long_description": "A local MCP server written in Swift that reads one Moodle site through the REST web-service API with a token kept in the login keychain.\n\nRead-only by construction: the web-service functions are a fixed list in code, quiz attempts, submissions, uploads, forum posts, messages, mark-as-read, view logging and completion changes are refused before any request, and there is no generic call tool.\n\nThe site and account are set once with `moodle-mcp login`. Only the courses confirmed with `moodle-mcp selftest --discover` can be read; answers that mention other courses are filtered.\n\nMessages: conversations are read through Moodle's own messaging. A site with messaging turned off answers MESSAGING_DISABLED, and there is nothing to read. Internal mail plugins (such as local_mail) are not read: their functions are not part of the mobile web service the token belongs to, so the token cannot reach them, and only the site's administrators could add them.\n\nIf the token expires, run `moodle-mcp login` in Terminal.",
   "author": {

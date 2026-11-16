@@ -53,7 +53,10 @@ A generic password in the login keychain, service `com.eneko.moodle-mcp`, accoun
 - The binary must be signed with a real identity (`scripts/pack.sh` refuses ad hoc). The
   access list keys on the designated requirement (`identifier "codes.eneko.moodle-mcp"` +
   certificate leaf), which survives rebuilds; an ad-hoc cdhash would not.
-- The token goes in the POST body, never a URL. It never reaches stdout, logs, errors or
+- The token goes in the POST body of web-service calls. A file download must carry it as
+  the `token` query parameter of `webservice/pluginfile.php`; that URL is built inside
+  `MoodleClient.downloadFile` and never leaves it. The login request is never retried, so
+  the password is sent once. The token never reaches stdout, logs, errors or
   answers: models do not decode it, `Redaction` drops `token`/`userprivateaccesskey` keys
   at every depth and scrubs `token=` parameters and the literal token from every outgoing
   text.

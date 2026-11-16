@@ -317,7 +317,8 @@ public final class MoodleClient: Sendable {
         let body = FormEncoding.encode([
             ("username", username), ("password", password), ("service", "moodle_mobile_app"),
         ])
-        let data = try await send(label: "login_token", url: tokenURL, body: body, cleaning: false)
+        // Never retried: a resend would put the password on the wire a second time.
+        let data = try await send(label: "login_token", url: tokenURL, body: body, cleaning: false, retrying: false)
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw .unexpectedResponse("login/token.php did not answer with a JSON object.")
         }
@@ -327,8 +328,11 @@ public final class MoodleClient: Sendable {
             message: Redaction.scrub(object["error"] as? String ?? "no reason given"))
     }
 
-    /// Paced, with one retry after `retryDelay` for a transient failure.
-    private func send(label: String, url: URL, body: Data, cleaning: Bool = true) async throws(MoodleError) -> Data {
+    /// Paced, with one retry after `retryDelay` for a transient failure unless `retrying`
+    /// is false.
+    private func send(
+        label: String, url: URL, body: Data, cleaning: Bool = true, retrying: Bool = true
+    ) async throws(MoodleError) -> Data {
         var attempt = 1
         while true {
             let started = ContinuousClock.now
@@ -338,7 +342,7 @@ public final class MoodleClient: Sendable {
                 return cleaning ? try Self.clean(data) : data
             } catch {
                 Diagnostics.request(label, attempt: attempt, outcome: error.code.lowercased(), since: started)
-                guard error.isTransient, attempt == 1 else { throw error }
+                guard retrying, error.isTransient, attempt == 1 else { throw error }
                 attempt += 1
                 await sleep(retryDelay)
             }

@@ -51,7 +51,7 @@ codesign --force --identifier "codes.eneko.$NAME" --sign "$IDENTITY" "$STAGE/ser
 echo "==> Designated requirement"
 REQUIREMENT=$(codesign -d -r- "$STAGE/server/$NAME" 2>&1 | grep "^designated" || true)
 case "$REQUIREMENT" in
-  *"certificate leaf"*) echo "    $REQUIREMENT" | sed -E 's/"[^"]*Apple Development[^"]*"/"<identity>"/' ;;
+  *"certificate leaf"*) echo "    $REQUIREMENT" | sed -E 's/(subject\.CN\] = )"[^"]*"/\1"<identity>"/' ;;
   *) echo "!! no certificate-based designated requirement: $REQUIREMENT" >&2; exit 1 ;;
 esac
 

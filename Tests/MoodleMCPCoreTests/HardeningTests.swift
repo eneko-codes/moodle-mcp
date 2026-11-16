@@ -173,4 +173,13 @@ struct HardeningTests {
         #expect(!isError, "\(text)")
         #expect(text.contains("\"range\" : \"0,00–10,00\""))
     }
+
+    @Test("The login request is never retried, so the password is sent at most once")
+    func loginNotRetried() async throws {
+        let transport = FakeTransport(["token.php": [.failure(.networkConnectionLost), json(#"{"token":"FAKEtokenFAKEtoken1111"}"#)]])
+        await #expect(throws: MoodleError.self) {
+            _ = try await makeClient(transport, store: FakeTokenStore(token: nil)).requestToken(username: "user", password: "secret")
+        }
+        #expect(await transport.sent.count == 1)
+    }
 }

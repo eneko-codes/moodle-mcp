@@ -4,7 +4,7 @@ import MCP
 public enum MoodleMCPServer {
 
     public static let name = "moodle-mcp"
-    public static let version = "0.2.3"
+    public static let version = "0.2.4"
 
     /// Returned from `initialize`: what per-tool descriptions cannot say once.
     public static let instructions = """
