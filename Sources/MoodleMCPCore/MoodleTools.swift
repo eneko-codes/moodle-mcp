@@ -1,9 +1,8 @@
 import Foundation
-import MCP
 
 /// Routes a `tools/call` to the session and renders the answer. Every answer and every
 /// error passes through `Redaction.scrub` before it leaves.
-public struct MoodleTools: Sendable {
+public struct MoodleTools: ToolHandler {
     let session: MoodleSession
     private let binaryPath: String
     /// `~/Downloads/moodle-mcp`, the only place `file_download` writes. A parameter so the
@@ -27,15 +26,14 @@ public struct MoodleTools: Sendable {
         Bundle.main.executableURL?.resolvingSymlinksInPath().path ?? CommandLine.arguments[0]
     }
 
-    public func handle(_ parameters: CallTool.Parameters) async -> CallTool.Result {
+    public func handle(_ parameters: ToolCall) async -> ToolOutput {
         let started = ContinuousClock.now
         do {
             let text = try await run(parameters.name, Arguments(parameters.arguments))
-            return .init(content: [.text(text: session.client.redact(text), annotations: nil, _meta: nil)], isError: false)
+            return ToolOutput(text: session.client.redact(text), isError: false)
         } catch {
             Diagnostics.toolFailed(parameters.name, error: error, since: started)
-            return .init(
-                content: [.text(text: session.client.redact(error.message), annotations: nil, _meta: nil)], isError: true)
+            return ToolOutput(text: session.client.redact(error.message), isError: true)
         }
     }
 

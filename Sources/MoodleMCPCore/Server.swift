@@ -1,10 +1,9 @@
 import Foundation
-import MCP
 
 public enum MoodleMCPServer {
 
     public static let name = "moodle-mcp"
-    public static let version = "0.2.4"
+    public static let version = "0.2.5"
 
     /// Returned from `initialize`: what per-tool descriptions cannot say once.
     public static let instructions = """
@@ -56,19 +55,14 @@ public enum MoodleMCPServer {
         transport: (any HTTPTransport)? = nil
     ) async throws {
         let session = try makeSession(configuration: configuration, tokenStore: tokenStore, transport: transport)
-        let tools = MoodleTools(session: session)
-        let server = Server(
-            name: name, version: version, instructions: instructions,
-            capabilities: .init(tools: .init(listChanged: false)))
-
-        await server.withMethodHandler(ListTools.self) { _ in .init(tools: ToolCatalog.all()) }
-        await server.withMethodHandler(CallTool.self) { await tools.handle($0) }
-
-        // The default StdioTransport logger is a no-op. Leave it that way: a logger writing
-        // to stdout would interleave with the JSON-RPC stream.
         Diagnostics.started(version: version)
-        try await server.start(transport: StdioTransport())
-        await server.waitUntilCompleted()
+        await serveStandardStreams(handler: handler(tools: MoodleTools(session: session)))
+    }
+
+    public static func handler(tools: MoodleTools) -> MCPHandler {
+        MCPHandler(
+            name: name, version: version, instructions: instructions,
+            catalog: ToolCatalog.all(), tools: tools)
     }
 
     public static func makeSession(

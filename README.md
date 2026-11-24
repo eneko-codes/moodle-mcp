@@ -300,8 +300,8 @@ is refused.
 
 ## Frameworks and APIs
 
-Apple frameworks and the MCP Swift SDK. The SDK brings its own dependencies (SwiftNIO,
-swift-log and others), pinned in `Package.resolved`.
+Apple frameworks only: there is **no third-party dependency**, and `Package.swift` lists
+none.
 
 | Used | For | Reference |
 |---|---|---|
@@ -310,7 +310,7 @@ swift-log and others), pinned in `Package.resolved`.
 | `URLSession`, ephemeral, with a redirect delegate | HTTPS | [URLSession](https://developer.apple.com/documentation/foundation/urlsession) |
 | `SecItemCopyMatching`, `SecItemAdd`, `SecItemDelete`, `SecKeychainSetUserInteractionAllowed` | The token in the login keychain, read with dialogs forbidden | [Keychain Services](https://developer.apple.com/documentation/security/keychain-services) |
 | `CryptoKit` `SHA256` | The hash `file_download` reports | [CryptoKit](https://developer.apple.com/documentation/cryptokit) |
-| MCP Swift SDK | The stdio server | [modelcontextprotocol/swift-sdk](https://github.com/modelcontextprotocol/swift-sdk) |
+| `MCPServer.swift` and `Value.swift`, over Foundation | The stdio server (JSON-RPC over stdio) | [Model Context Protocol](https://modelcontextprotocol.io) |
 
 ## Development
 
