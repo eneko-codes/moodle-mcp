@@ -1,8 +1,5 @@
 import Foundation
-import MCP
 import Testing
-
-typealias MCPValue = MCP.Value
 
 @testable import MoodleMCPCore
 
@@ -150,19 +147,15 @@ func tools(_ transport: FakeTransport, downloads: URL? = nil) -> MoodleTools {
         downloadsRoot: downloads ?? FileManager.default.temporaryDirectory.appendingPathComponent("moodle-mcp-unused"))
 }
 
-func call(_ tools: MoodleTools, _ name: String, _ arguments: [String: MCPValue] = [:]) async -> (text: String, isError: Bool) {
+func call(_ tools: MoodleTools, _ name: String, _ arguments: [String: Value] = [:]) async -> (text: String, isError: Bool) {
     let result = await tools.handle(.init(name: name, arguments: arguments))
-    let text = result.content.compactMap { content -> String? in
-        if case .text(let text, _, _) = content { return text }
-        return nil
-    }.joined()
-    return (text, result.isError ?? false)
+    return (result.text, result.isError)
 }
 
 @Suite("Every tool")
 struct EveryToolTests {
 
-    static let calls: [(String, [String: MCPValue])] = [
+    static let calls: [(String, [String: Value])] = [
         (ToolCatalog.statusName, [:]), (ToolCatalog.coursesName, [:]),
         (ToolCatalog.courseContentsName, ["courseid": .int(9001)]),
         (ToolCatalog.assignmentsName, [:]), (ToolCatalog.quizzesName, [:]),
