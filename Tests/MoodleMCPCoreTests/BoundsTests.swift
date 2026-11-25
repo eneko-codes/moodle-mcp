@@ -635,6 +635,10 @@ struct BoundsTests {
         #expect(hidden.isError && hidden.text.contains("is not one this server shows"), "\(hidden.text)")
         let absent = await call(tools, ToolCatalog.conversationGetName, ["conversationid": 5000])
         #expect(absent.isError && absent.text.contains("is not one this server shows"))
+
+        let spent = MoodleTools(session: MoodleSession(client: client, scope: CourseScope(allowed: [9001])), workBudget: .zero)
+        let stopped = await call(spent, ToolCatalog.conversationGetName, ["conversationid": 780])
+        #expect(stopped.isError && stopped.text.contains("was not among the 100 most recent conversations"), "\(stopped.text)")
     }
 
     @Test("A short text read in full carries no notice")
