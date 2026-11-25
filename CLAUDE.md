@@ -130,7 +130,8 @@ Course filtering where Moodle's answer does not say the course:
 - `conversations_list` / `conversation_get`: group conversations (type 2) are kept only
   when `subname` is the full name of an allowed course that no other enrolled course
   shares; individual and self conversations belong to no course and are kept.
-  `conversation_get` only opens an id among the first 500 the list shows.
+  `conversation_get` only opens an id the list shows, searched among the most recent for
+  as long as `workBudget` allows.
 - `notifications_list`: attributed by `customdata` (`courseid`, `cmid`) or the context
   URL (`course/view.php?id=`, `course=`/`courseid=`, a module page of an allowed course);
   anything else is hidden and only counted.

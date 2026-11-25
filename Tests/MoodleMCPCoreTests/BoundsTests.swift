@@ -583,6 +583,60 @@ struct BoundsTests {
         #expect(under.text.hasPrefix("max_characters=0 is outside 1–\(maximum); 1 was used.\n"))
     }
 
+    @Test("An item that a page far down a source showed is read in full from that page's offset")
+    func idSearchesStartAtTheOffset() async {
+        let notificationCeiling = ToolCatalog.scanRequests * 50
+        let deep = notificationCeiling + 100
+        let lost = await Self.notifications.call(deep + 10, ["notificationid": .int(5000 + deep)])
+        #expect(lost.isError)
+        #expect(
+            lost.text.contains("The scan stopped after \(notificationCeiling) notifications; more may exist. Narrow by offset."),
+            "\(lost.text)")
+        let found = await Self.notifications.call(deep + 10, ["notificationid": .int(5000 + deep), "offset": .int(deep)])
+        #expect(!found.isError && found.text.contains(Self.marker(deep)), "\(found.text.prefix(300))")
+        let listed = await Self.notifications.call(deep + 10, ["offset": .int(deep)], wide: true)
+        #expect(listed.text.contains("Read one in full with notifications_list, passing its notificationid and this page's offset."))
+
+        let messageCeiling = ToolCatalog.scanRequests * 100
+        let message = await Self.messages.call(
+            messageCeiling + 300, ["messageid": .int(900 + messageCeiling + 200), "offset": .int(messageCeiling + 200)])
+        #expect(!message.isError && message.text.contains(Self.marker(messageCeiling + 200)), "\(message.text.prefix(300))")
+        let missing = await Self.messages.call(10, ["messageid": .int(999_999)])
+        #expect(missing.isError && missing.text.contains("has no message 999999 at or after offset=0"))
+    }
+
+    @Test("A conversation far down the list can still be opened; one of another course cannot")
+    func conversationSearch() async {
+        let transport = ScriptedTransport { function, fields in
+            switch function {
+            case "core_message_get_conversations":
+                let all = (0..<800).map { index -> [String: Any] in
+                    var row = BoundsTests.conversation(index, wide: false)
+                    if index == 10 {
+                        row["type"] = 2
+                        row["subname"] = "Curso Ajeno Secreto"
+                    }
+                    return row
+                }
+                let page = BoundsTests.slice(all, from: BoundsTests.bounded(fields, "limitfrom", 0), count: BoundsTests.bounded(fields, "limitnum", 20))
+                return ["conversations": page]
+            case "core_message_get_conversation_messages":
+                return ["id": 780, "members": [], "messages": [["id": 1, "useridfrom": 5, "text": "<p>Hola</p>", "timecreated": 1_795_215_540]]]
+            default: return nil
+            }
+        }
+        let client = MoodleClient(
+            siteURL: testSite, tokenStore: FakeTokenStore(), transport: transport, minimumInterval: .zero,
+            retryDelay: .zero, sleep: { _ in })
+        let tools = MoodleTools(session: MoodleSession(client: client, scope: CourseScope(allowed: [9001])))
+        let far = await call(tools, ToolCatalog.conversationGetName, ["conversationid": 780])
+        #expect(!far.isError && far.text.contains("Hola"), "\(far.text.prefix(300))")
+        let hidden = await call(tools, ToolCatalog.conversationGetName, ["conversationid": 90])
+        #expect(hidden.isError && hidden.text.contains("is not one this server shows"), "\(hidden.text)")
+        let absent = await call(tools, ToolCatalog.conversationGetName, ["conversationid": 5000])
+        #expect(absent.isError && absent.text.contains("is not one this server shows"))
+    }
+
     @Test("A short text read in full carries no notice")
     func shortSingleHasNoNotice() async {
         let result = await Self.assignments.call(3, ["assignmentid": 701])

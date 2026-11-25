@@ -97,8 +97,6 @@ public enum ToolCatalog {
     public static let scanRequests = 20
     /// Moodle's own largest page of action events.
     public static let eventsPerRequest = 50
-    /// conversation_get opens only a conversation among this many that the list shows.
-    public static let conversationSearchLimit = 500
 
     public static func all() -> [Tool] {
         [
@@ -344,7 +342,8 @@ public enum ToolCatalog {
             courses, \(defaultEventLimit) to a page by date, then id, from now on with no \
             end. Events of other courses are never shown. from_date and to_date bound the \
             dates, both inclusive; one alone runs to the end, so to_date alone starts at \
-            the earliest event. \(paging(eventLimitRange))
+            the earliest event; with neither, each call starts at its own now, so pass \
+            from_date when paging. \(paging(eventLimitRange))
 
             Moodle gives no total: a page gives one when it reaches the last event, and \
             otherwise says whether more exist. Reaching a page walks the events before it, \
@@ -375,10 +374,11 @@ public enum ToolCatalog {
             Reading does not mark them read. \(paging(notificationLimitRange)) offset counts \
             every notification, shown or not.
 
-            \(longTexts("Texts", selector: "notificationid"))
+            \(longTexts("Texts", selector: "notificationid with the offset of its page"))
             """,
         inputSchema: object(properties: [
-            "notificationid": identifier("Return this one notification, with its text whole."),
+            "notificationid": identifier(
+                "Return this one notification, with its text whole, searched from offset on: pass the offset of the page that listed it."),
             "limit": limit("notifications", range: notificationLimitRange, default: defaultNotificationLimit),
             "offset": offset,
             "character_offset": characterOffset("notificationid"),
@@ -481,16 +481,18 @@ public enum ToolCatalog {
             newest first, with sender, date and text. Moodle has no total: a page says \
             whether more exist. \(paging(messageLimitRange))
 
-            \(longTexts("Texts", selector: "messageid"))
+            \(longTexts("Texts", selector: "messageid with the offset of its page"))
 
-            Only conversations among the \(conversationSearchLimit) most recent that \
-            conversations_list shows can be opened. Does not mark them read. Cannot send: \
+            Only a conversation that conversations_list shows can be opened; it is searched \
+            for among the most recent, as many as \(workBudget.components.seconds) seconds \
+            allow. Does not mark them read. Cannot send: \
             messages to teachers are sent by the person from the site.
             """,
         inputSchema: object(
             properties: [
                 "conversationid": identifier("An id from conversations_list."),
-                "messageid": identifier("Return this one message of the conversation, with its text whole."),
+                "messageid": identifier(
+                    "Return this one message, with its text whole, searched from offset on: pass the offset of the page that listed it."),
                 "limit": limit("messages", range: messageLimitRange, default: defaultMessageLimit),
                 "offset": offset,
                 "character_offset": characterOffset("messageid"),

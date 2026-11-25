@@ -223,37 +223,46 @@ extension MoodleTools {
         let page = try arguments.page(defaultLimit: ToolCatalog.defaultMessageLimit, limits: ToolCatalog.messageLimitRange)
         let window = try arguments.window()
         // Must be one the list shows. Moodle has no allow-listed call that fetches a single
-        // conversation's course, so the list is paged to find it.
+        // conversation's course, so the list is walked to find it, for as long as the work
+        // budget allows.
         let allowedNames = try await session.uniqueAllowedCourseNames()
-        let batch = 50
-        var found = false
+        let batch = 100
         var searched = 0
-        while searched < ToolCatalog.conversationSearchLimit {
+        search: while true {
             if searched > 0, budget.isSpent {
                 throw .badArgument(
                     name: "conversationid",
-                    reason: "the search for it reached the time limit after \(searched) conversations. Try again.")
+                    reason: """
+                        conversation \(conversationID) was not among the \(searched) most recent conversations, \
+                        which are as many as one call can search.
+                        """)
             }
             let conversations = try await conversationPage(limit: batch, offset: searched)
             searched += conversations.count
-            if conversations.contains(where: { $0["id"].int == conversationID && Self.isShown($0, allowedNames: allowedNames) }) {
-                found = true
-                break
+            if let match = conversations.first(where: { $0["id"].int == conversationID }),
+                Self.isShown(match, allowedNames: allowedNames)
+            {
+                break search
             }
-            if conversations.count < batch { break }
-        }
-        guard found else {
-            throw .badArgument(name: "conversationid", reason: "conversation \(conversationID) is not one this server shows. Call conversations_list.")
+            if conversations.count < batch || conversations.contains(where: { $0["id"].int == conversationID }) {
+                throw .badArgument(
+                    name: "conversationid", reason: "conversation \(conversationID) is not one this server shows. Call conversations_list.")
+            }
         }
         let userID = try await session.userID()
 
         if let messageID {
+            // From the offset of the page that listed it, so that any message a page shows
+            // can be read in full.
             let size = 100
+            var scanned = 0
             for request in 0..<ToolCatalog.scanRequests {
                 if request > 0, budget.isSpent { break }
-                let answer = try await messagePage(conversationID, userID: userID, limit: size, offset: request * size)
+                let answer = try await messagePage(
+                    conversationID, userID: userID, limit: size, offset: page.offset + request * size)
                 let members = Self.members(answer)
                 let messages = answer["messages"].array
+                scanned += messages.count
                 if let message = messages.first(where: { $0["id"].int == messageID }) {
                     return Rows.one(
                         Self.message(message, members: members, userID: userID),
@@ -262,18 +271,21 @@ extension MoodleTools {
                     ) { .object(["conversationid": .int(conversationID), "message": $0]) }
                 }
                 if messages.count < size {
-                    throw .badArgument(name: "messageid", reason: "conversation \(conversationID) has no message \(messageID).")
+                    throw .badArgument(
+                        name: "messageid",
+                        reason: "conversation \(conversationID) has no message \(messageID) at or after offset=\(page.offset).")
                 }
             }
             throw .badArgument(
-                name: "messageid", reason: "message \(messageID) was not among the newest messages read. Read the conversation in pages to find it.")
+                name: "messageid",
+                reason: "message \(messageID) was not found. " + Notice.scanStopped(after: scanned, things: "messages", narrowBy: "offset"))
         }
 
         let answer = try await messagePage(conversationID, userID: userID, limit: page.limit + 1, offset: page.offset)
         let members = Self.members(answer)
         let messages = answer["messages"].array
         let rows: [Out?] = messages.prefix(page.limit).map { Self.message($0, members: members, userID: userID) }
-        let readOne = "conversation_get, passing its id as messageid"
+        let readOne = "conversation_get, passing its id as messageid and this page's offset"
         return Rows.page(
             rows, offset: page.offset, limit: page.limit, extent: messages.count > page.limit ? .moreAfter : .endsHere,
             things: "messages", notices: arguments.notices, readOne: ["text": readOne, "text_html": readOne]
@@ -326,28 +338,39 @@ extension MoodleTools {
         }
 
         if let notificationID {
+            // From the offset of the page that listed it, so that any notification a page
+            // shows can be read in full.
             let size = 50
+            var scanned = 0
             for request in 0..<ToolCatalog.scanRequests {
                 if request > 0, budget.isSpent { break }
-                let answer = try await notificationPage(userID: userID, limit: size, offset: request * size)
+                let answer = try await notificationPage(userID: userID, limit: size, offset: page.offset + request * size)
                 let notifications = answer["notifications"].array
+                scanned += notifications.count
                 if let match = notifications.first(where: { $0["id"].int == notificationID }) {
-                    guard let row = shown(match) else { break }
+                    guard let row = shown(match) else {
+                        throw .badArgument(name: "notificationid", reason: "notification \(notificationID) is not one this server shows.")
+                    }
                     return Rows.one(
                         row, characterOffset: window.characterOffset, maxCharacters: window.maxCharacters,
                         notices: arguments.notices)
                 }
-                if notifications.count < size { break }
+                if notifications.count < size {
+                    throw .badArgument(
+                        name: "notificationid",
+                        reason: "no notification \(notificationID) at or after offset=\(page.offset). Call notifications_list.")
+                }
             }
             throw .badArgument(
                 name: "notificationid",
-                reason: "notification \(notificationID) is not one this server shows among the newest it read. Call notifications_list.")
+                reason: "notification \(notificationID) was not found. "
+                    + Notice.scanStopped(after: scanned, things: "notifications", narrowBy: "offset"))
         }
 
         let answer = try await notificationPage(userID: userID, limit: page.limit + 1, offset: page.offset)
         let notifications = answer["notifications"].array
         let rows = notifications.prefix(page.limit).map(shown)
-        let readOne = "notifications_list, passing its notificationid"
+        let readOne = "notifications_list, passing its notificationid and this page's offset"
         return Rows.page(
             Array(rows), offset: page.offset, limit: page.limit,
             extent: notifications.count > page.limit ? .moreAfter : .endsHere, things: "notifications",
