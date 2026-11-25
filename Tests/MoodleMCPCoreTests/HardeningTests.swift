@@ -132,11 +132,13 @@ struct HardeningTests {
         #expect(throws: MoodleError.tokenInvalid) { try MoodleClient.raiseException(in: body) }
     }
 
-    @Test("A bare end date includes the whole day")
+    @Test("An end date includes the whole of the precision written: a day, a minute, a second")
     func endOfDay() throws {
-        #expect(try DateArgument.parse("2026-11-20", name: "to", endOfDay: true) == 1_795_215_599)
-        #expect(try DateArgument.parse("2026-11-20T10:00", name: "to", endOfDay: true)
-            == DateArgument.parse("2026-11-20T10:00", name: "to"))
+        #expect(try DateArgument.parse("2026-11-20", name: "to_date", endOfRange: true) == 1_795_215_599)
+        #expect(try DateArgument.parse("2026-11-20T10:00", name: "to_date", endOfRange: true)
+            == DateArgument.parse("2026-11-20T10:00", name: "to_date") + 59)
+        #expect(try DateArgument.parse("2026-11-20T10:00:30", name: "to_date", endOfRange: true)
+            == DateArgument.parse("2026-11-20T10:00:30", name: "to_date"))
     }
 
     @Test("A group conversation is dropped when another enrolled course shares the allowed course's name")

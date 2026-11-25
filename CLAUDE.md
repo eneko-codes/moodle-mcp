@@ -72,10 +72,17 @@ A local MCP server (Swift 6, stdio transport) for Moodle's REST web-service API
 **No third-party dependency**: `Package.swift` lists none, and the MCP protocol (JSON-RPC
 over stdio) is `MCPServer.swift` over Foundation. Adding a package needs the owner's say-so.
 
-**`MCPServer.swift`, `Value.swift` and `Tests/…/MCPProtocolTests.swift` are copied unchanged
-into every one of the owner's MCP servers** (the test file differs only in its
-`@testable import`). A change to one is made to every copy in the same piece of work; never
-let a copy drift. Moodle's own answers are read through `JSON` (`JSON.swift`), not `Value`.
+**`MCPServer.swift`, `Value.swift`, `ToolStandard.swift` and the tests
+`MCPProtocolTests.swift` and `ToolStandardTests.swift` are copied unchanged into every one of
+the owner's MCP servers** (the test files differ only in their `@testable import`). A change
+to one is made to every copy in the same piece of work; never let a copy drift. Moodle's own
+answers are read through `JSON` (`JSON.swift`), not `Value`.
+
+`ToolStandard.swift` holds what every tool here must keep to: the longest result,
+description and error, the time a call may take, the fixed wording of each notice that says
+what a result left out (`Notice`), and the guard `MCPServer.swift` passes every result
+through. A tool bounds its own result and says how to get the rest; the guard only catches
+the one that forgot.
 
 ## APIs
 
@@ -100,6 +107,22 @@ let a copy drift. Moodle's own answers are read through `JSON` (`JSON.swift`), n
 `_list` / `_get` suffixes. Answers are JSON built field by field from `Out`;
 nothing Moodle sends reaches an answer unless a tool names it.
 
+**How a tool keeps to the tool standard here.** Sizes, ranges and time limits are constants
+in `ToolCatalog`, and the schemas, the descriptions and the instructions quote them by
+interpolation, never as literals; README and manifest prose carries no figure. `Arguments`
+refuses a name the schema does not list (so a renamed argument fails), moves a quantity
+(`limit`, `offset`, a window) into its range and collects the sentence that says so in
+`notices`, and refuses an id outside `identifierRange`. Every listing goes through
+`Rows.page`: notices, then the page's position (`Notice.page`, or "more exist" where Moodle
+gives no total), the rows it never shows (other courses), and each long text clipped to
+`clipWidth` (`Notice.clipped`, naming the id argument that reads it), all before the JSON.
+That id argument returns one item through `Rows.one`, which windows its long texts with
+`character_offset` and `max_characters`. Both render through `ToolStandard.fitting`. Every
+text comes twice (plain and `_html`), and the limits count both. A call runs inside
+`Deadline` (`callTimeLimit`); tools that make one request per item stop starting new ones
+after `workBudget` and add `Notice.partial`. `BoundsTests` holds all of it: a new listing
+gets an entry in its `listings`, and a new id argument one in `singles`.
+
 Course filtering where Moodle's answer does not say the course:
 - `forum_discussions`: the forum must be one `mod_forum_get_forums_by_courses` lists for
   an allowed course, checked before asking.
@@ -107,7 +130,8 @@ Course filtering where Moodle's answer does not say the course:
 - `conversations_list` / `conversation_get`: group conversations (type 2) are kept only
   when `subname` is the full name of an allowed course that no other enrolled course
   shares; individual and self conversations belong to no course and are kept.
-  `conversation_get` only opens an id among the first 500 the list shows.
+  `conversation_get` only opens an id the list shows, searched among the most recent for
+  as long as `workBudget` allows.
 - `notifications_list`: attributed by `customdata` (`courseid`, `cmid`) or the context
   URL (`course/view.php?id=`, `course=`/`courseid=`, a module page of an allowed course);
   anything else is hidden and only counted.

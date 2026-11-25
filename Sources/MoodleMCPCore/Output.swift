@@ -11,6 +11,13 @@ enum Output {
         }
         return Redaction.scrub(text, token: token)
     }
+
+    /// The JSON of an answer built from `Out`. It cannot fail: `Out` holds only strings,
+    /// whole numbers, flags and finite numbers parsed from JSON, so the fallback is never
+    /// reached.
+    static func text(_ value: Out) -> String {
+        (try? json(value)) ?? "null"
+    }
 }
 
 /// The rendered shapes. Each is built from a model, field by field, so nothing Moodle sends

@@ -155,23 +155,24 @@ swift build -c release
 |---|---|---|---|
 | `moodle_status` | read | `core_webservice_get_site_info` | Whether the token works, the site and Moodle release, your user id and name, the number of allowed courses, and any function this server needs that the site does not grant |
 | `courses_list` | read | `core_enrol_get_users_courses` | The allowed courses: id, full name and short name |
-| `course_contents` | read | `core_course_get_contents` | Sections and their modules (type, dates, your completion) with their files |
+| `course_contents` | read | `core_course_get_contents` | Sections and their modules (type, dates, your completion) with their files, as one list of entries; one module (`cmid`) or section (`sectionid`) in full |
 | `file_download` | local write | the file's URL, through `webservice/pluginfile.php` | Saves one course file under `~/Downloads/moodle-mcp/<course short name>/` and returns its path, size and SHA-256 |
-| `assignments_list` | read | `mod_assign_get_assignments`, `mod_assign_get_submission_status` | Dates, maximum grade, introduction, your submission's status and your grade |
-| `quizzes_list` | read | `mod_quiz_get_quizzes_by_courses`, `mod_quiz_get_user_attempts` | Dates, time limit, attempts allowed, your attempts' state and grade. Never the questions |
-| `events_list` | read | `core_calendar_get_action_events_by_timesort` | Deadlines and other action events between two dates, at most 200 per call |
-| `notifications_list` | read | `message_popup_get_popup_notifications` | Your notifications that can be traced to an allowed course |
-| `forums_list` | read | `mod_forum_get_forums_by_courses` | Forums, with their number of discussions and unread posts |
-| `forum_discussions` | read | `mod_forum_get_forum_discussions` | One page of a forum's discussions, in Moodle's default order |
-| `discussion_posts` | read | `mod_forum_get_discussion_posts` | Every post of one discussion, with attachments |
+| `assignments_list` | read | `mod_assign_get_assignments`, `mod_assign_get_submission_status` | Dates, maximum grade, introduction, your submission's status and your grade, soonest due first; one in full by `assignmentid` |
+| `quizzes_list` | read | `mod_quiz_get_quizzes_by_courses`, `mod_quiz_get_user_attempts` | Dates, time limit, attempts allowed, your attempts' state and grade, soonest closing first; one quiz with every attempt by `quizid`. Never the questions |
+| `events_list` | read | `core_calendar_get_action_events_by_timesort` | Deadlines and other action events between `from_date` and `to_date`; one in full by `eventid` |
+| `notifications_list` | read | `message_popup_get_popup_notifications` | Your notifications that can be traced to an allowed course; one in full by `notificationid` |
+| `forums_list` | read | `mod_forum_get_forums_by_courses` | Forums, with their number of discussions and unread posts; one in full by `forumid` |
+| `forum_discussions` | read | `mod_forum_get_forum_discussions` | A forum's discussions, in Moodle's default order |
+| `discussion_posts` | read | `mod_forum_get_discussion_posts` | The posts of one discussion, oldest first, with attachments; one in full by `postid` |
 | `conversations_list` | read | `core_message_get_conversations` | Your Moodle message conversations (see [Messages](#messages-and-internal-mail)) |
-| `conversation_get` | read | `core_message_get_conversation_messages` | One conversation's messages |
-| `grades_get` | read | `gradereport_user_get_grade_items` | Your grade items in one course |
-| `profile_get` | read | `core_user_get_users_by_field` | Your custom profile fields and city, nothing else |
+| `conversation_get` | read | `core_message_get_conversation_messages` | One conversation's messages, newest first; one in full by `messageid` |
+| `grades_get` | read | `gradereport_user_get_grade_items` | Your grade items in one course; one in full by `itemid` |
+| `profile_get` | read | `core_user_get_users_by_field` | Your custom profile fields and city, nothing else; one field in full by `shortname` |
 
 Claude starts with `moodle_status`, then calls `courses_list` for the course ids the other
-tools take. `assignments_list` and `quizzes_list` make one request per activity, so asking
-about every course at once takes a few seconds.
+tools take. `assignments_list` and `quizzes_list` make one request per activity on the
+page, so a page of them takes a few seconds; a call that runs long stops starting new
+requests, returns what it has and says it is partial.
 
 ## What the answers look like
 
@@ -182,6 +183,15 @@ about every course at once takes a few seconds.
   `text (url)`. The original HTML is beside it, in a field ending in `_html` (`message` and
   `message_html`, for example).
 - **File URLs** never carry the token. Pass one to `file_download` to save the file.
+- **Every answer is bounded.** A listing returns one page, in an order it states, and its
+  first lines say in plain words, before the JSON, how many there are and the `limit` and
+  `offset` of the next page. A long text (a summary, an introduction, a message, feedback)
+  is clipped in a listing, as plain text and as HTML; the notice names the id argument that
+  reads that one item in full, a window at a time, with `character_offset` and
+  `max_characters`. Dates are filtered with `from_date` and `to_date`, both inclusive.
+  Rows that belong to another course are never shown, and a page says how many it left
+  out. Arguments a tool does not take are refused, so a call that still uses a name from
+  before version 1.0 (`from`, `to`, `page`, `perpage`) fails instead of being ignored.
 
 ## Messages and internal mail
 
@@ -281,6 +291,8 @@ is refused.
 | `NO_ALLOWED_COURSES` | No courses have been confirmed | Run `"$BIN" selftest --discover --category <id>` |
 | `COURSE_NOT_ALLOWED` | The course id is not in your list | Use an id from `courses_list`, or add the course with `selftest --discover` |
 | `MESSAGING_DISABLED` | The site has Moodle messaging turned off | Nothing to fix; see [Messages](#messages-and-internal-mail) |
+| `UNKNOWN_ARGUMENT` | The call passed an argument the tool does not take, often a name from before version 1.0 | The error lists the names the tool takes |
+| `TIMED_OUT` | The site did not answer in time, and the call was abandoned | Ask for less (one course, a smaller `limit`), or check the site with `moodle_status` |
 | A fix seems not to work | Claude is still running the old server | Quit Claude completely and reopen it; `moodle_status` shows `server_version` |
 
 ## Known limits
@@ -310,7 +322,7 @@ none.
 | `URLSession`, ephemeral, with a redirect delegate | HTTPS | [URLSession](https://developer.apple.com/documentation/foundation/urlsession) |
 | `SecItemCopyMatching`, `SecItemAdd`, `SecItemDelete`, `SecKeychainSetUserInteractionAllowed` | The token in the login keychain, read with dialogs forbidden | [Keychain Services](https://developer.apple.com/documentation/security/keychain-services) |
 | `CryptoKit` `SHA256` | The hash `file_download` reports | [CryptoKit](https://developer.apple.com/documentation/cryptokit) |
-| `MCPServer.swift` and `Value.swift`, over Foundation | The stdio server (JSON-RPC over stdio) | [Model Context Protocol](https://modelcontextprotocol.io) |
+| `MCPServer.swift`, `Value.swift` and `ToolStandard.swift`, over Foundation | The stdio server (JSON-RPC over stdio) and the bounds every answer keeps | [Model Context Protocol](https://modelcontextprotocol.io) |
 
 ## Development
 

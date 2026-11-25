@@ -6,19 +6,60 @@ extension MoodleTools {
     // MARK: assignments_list
 
     /// `mod_assign_get_assignments`, then `mod_assign_get_submission_status` once per
-    /// assignment. Neither logs a view (checked against Moodle 4.5's source); the view
-    /// logger is `mod_assign_view_submission_status`, which is forbidden.
-    func assignments(_ arguments: Arguments) async throws(MoodleError) -> String {
-        let courseIDs = try session.scope.resolve(try arguments.int("courseid"))
+    /// assignment on the page. Neither logs a view (checked against Moodle 4.5's source);
+    /// the view logger is `mod_assign_view_submission_status`, which is forbidden.
+    func assignments(_ arguments: Arguments, budget: Budget) async throws(MoodleError) -> String {
+        let courseID = try arguments.optionalIdentifier("courseid")
+        let assignmentID = try arguments.optionalIdentifier("assignmentid")
+        let page = try arguments.page(
+            defaultLimit: ToolCatalog.defaultAssignmentLimit, limits: ToolCatalog.assignmentLimitRange)
+        let window = try arguments.window()
+        let courseIDs = try session.scope.resolve(courseID)
         let answer = try await session.client.callJSON(.assignments, [.ints("courseids", courseIDs)])
-        var rows: [Out] = []
+        var found: [(assignment: JSON, courseID: Int)] = []
         for course in answer["courses"].array {
             guard let courseID = course["id"].int, session.scope.contains(courseID) else { continue }
-            for assignment in course["assignments"].array {
-                rows.append(try await assignmentRow(assignment, courseID: courseID))
+            for assignment in course["assignments"].array where assignment["id"].int != nil {
+                found.append((assignment, courseID))
             }
         }
-        return try Output.json(Out.array(rows))
+
+        if let assignmentID {
+            guard let match = found.first(where: { $0.assignment["id"].int == assignmentID }) else {
+                throw .badArgument(
+                    name: "assignmentid",
+                    reason: "no assignment \(assignmentID) in \(courseID.map { "course \($0)" } ?? "the allowed courses"). Call assignments_list.")
+            }
+            let row = try await assignmentRow(match.assignment, courseID: match.courseID)
+            return Rows.one(
+                row, characterOffset: window.characterOffset, maxCharacters: window.maxCharacters,
+                notices: arguments.notices)
+        }
+
+        found.sort { Self.soonestFirst($0.assignment["duedate"].int, $0.assignment["id"].int, $1.assignment["duedate"].int, $1.assignment["id"].int) }
+        var rows: [Out?] = []
+        var notices = arguments.notices
+        for item in found.dropFirst(page.offset).prefix(page.limit) {
+            // At least one, so that a call always gets further than the last.
+            if !rows.isEmpty, budget.isSpent {
+                notices.append(Notice.partial(after: rows.count, things: "assignments", narrowBy: "courseid or limit"))
+                break
+            }
+            rows.append(try await assignmentRow(item.assignment, courseID: item.courseID))
+        }
+        let readOne = "assignments_list, passing its assignmentid"
+        return Rows.page(
+            rows, offset: page.offset, limit: page.limit, extent: .total(found.count), things: "assignments",
+            notices: notices,
+            readOne: ["intro": readOne, "intro_html": readOne, "display": readOne, "display_html": readOne],
+            render: Out.array)
+    }
+
+    /// Soonest first; no date (Moodle's 0) after every date; then by id, so no two tie.
+    static func soonestFirst(_ lhsDate: Int?, _ lhsID: Int?, _ rhsDate: Int?, _ rhsID: Int?) -> Bool {
+        let lhs = (lhsDate ?? 0) > 0 ? lhsDate! : Int.max
+        let rhs = (rhsDate ?? 0) > 0 ? rhsDate! : Int.max
+        return lhs != rhs ? lhs < rhs : (lhsID ?? 0) < (rhsID ?? 0)
     }
 
     private func assignmentRow(_ assignment: JSON, courseID: Int) async throws(MoodleError) -> Out {
@@ -66,28 +107,96 @@ extension MoodleTools {
 
     /// Quiz settings and your attempts' state and grade. Never questions or answers: the
     /// functions that return them (`mod_quiz_get_attempt_*`) are forbidden.
-    func quizzes(_ arguments: Arguments) async throws(MoodleError) -> String {
-        let courseIDs = try session.scope.resolve(try arguments.int("courseid"))
+    func quizzes(_ arguments: Arguments, budget: Budget) async throws(MoodleError) -> String {
+        let courseID = try arguments.optionalIdentifier("courseid")
+        let quizID = try arguments.optionalIdentifier("quizid")
+        let page = try arguments.page(
+            defaultLimit: quizID == nil ? ToolCatalog.defaultQuizLimit : ToolCatalog.defaultAttemptLimit,
+            limits: ToolCatalog.quizLimitRange)
+        let window = try arguments.window()
+        let courseIDs = try session.scope.resolve(courseID)
         let answer = try await session.client.callJSON(.quizzes, [.ints("courseids", courseIDs)])
-        var rows: [Out] = []
-        for quiz in answer["quizzes"].array {
-            guard let courseID = quiz["course"].int, session.scope.contains(courseID), let quizID = quiz["id"].int else {
-                continue
+        var found = answer["quizzes"].array.filter { quiz in
+            quiz["id"].int != nil && quiz["course"].int.map(session.scope.contains) == true
+        }
+
+        if let quizID {
+            guard let quiz = found.first(where: { $0["id"].int == quizID }) else {
+                throw .badArgument(
+                    name: "quizid",
+                    reason: "no quiz \(quizID) in \(courseID.map { "course \($0)" } ?? "the allowed courses"). Call quizzes_list.")
             }
-            let maxGrade = quiz["grade"].double
-            let sumGrades = quiz["sumgrades"].double
-            var row: [String: Out] = [
-                "id": .int(quizID), "cmid": .int(quiz["coursemodule"]), "courseid": .int(courseID),
-                "name": .str(quiz["name"]), "opens": .date(quiz["timeopen"]), "closes": .date(quiz["timeclose"]),
-                "time_limit_seconds": (quiz["timelimit"].int ?? 0) > 0 ? .int(quiz["timelimit"]) : .null,
-                // 0 means unlimited in Moodle.
-                "attempts_allowed": (quiz["attempts"].int ?? 0) > 0 ? .int(quiz["attempts"]) : .string("unlimited"),
-                "max_grade": .number(quiz["grade"]),
-            ]
-            Out.html(quiz["intro"], into: &row, key: "intro")
-            let attempts = try await session.client.callJSON(
-                .quizUserAttempts, [.int("quizid", quizID), .value("status", "all"), .value("includepreviews", "0")])
-            row["your_attempts"] = .array(attempts["attempts"].array.map { attempt in
+            let attempts = try await self.attempts(of: quiz)
+            return ToolStandard.fitting(page.limit) { size in
+                let shown = Array(attempts.dropFirst(page.offset).prefix(size))
+                var notices = arguments.notices
+                if let position = Notice.page(offset: page.offset, count: shown.count, total: attempts.count, things: "attempts") {
+                    notices.append(position)
+                }
+                var row = Self.quizFields(quiz)
+                row["attempt_count"] = .int(attempts.count)
+                row["your_attempts"] = .array(shown)
+                return Rows.one(
+                    .object(row), characterOffset: window.characterOffset, maxCharacters: window.maxCharacters,
+                    notices: notices)
+            }
+        }
+
+        found.sort { Self.soonestFirst($0["timeclose"].int, $0["id"].int, $1["timeclose"].int, $1["id"].int) }
+        var rows: [Out?] = []
+        var notices = arguments.notices
+        for quiz in found.dropFirst(page.offset).prefix(page.limit) {
+            if !rows.isEmpty, budget.isSpent {
+                notices.append(Notice.partial(after: rows.count, things: "quizzes", narrowBy: "courseid or limit"))
+                break
+            }
+            let attempts = try await self.attempts(of: quiz)
+            var row = Self.quizFields(quiz)
+            row["attempt_count"] = .int(attempts.count)
+            row["your_attempts"] = .array(Array(attempts.prefix(ToolCatalog.attemptsPerQuiz)))
+            rows.append(.object(row))
+        }
+        let readOne = "quizzes_list, passing its quizid"
+        return Rows.page(
+            rows, offset: page.offset, limit: page.limit, extent: .total(found.count), things: "quizzes",
+            notices: notices, readOne: ["intro": readOne, "intro_html": readOne],
+            extra: { shown in
+                let unshown = shown.reduce(0) { sum, row in
+                    guard case .object(let fields) = row, case .int(let count)? = fields["attempt_count"],
+                        case .array(let attempts)? = fields["your_attempts"]
+                    else { return sum }
+                    return sum + count - attempts.count
+                }
+                return unshown > 0
+                    ? [Notice.notShown(count: unshown, things: "attempts of the quizzes on this page", pass: "quizid=<the quiz's id>")]
+                    : []
+            },
+            render: Out.array)
+    }
+
+    private static func quizFields(_ quiz: JSON) -> [String: Out] {
+        var row: [String: Out] = [
+            "id": .int(quiz["id"]), "cmid": .int(quiz["coursemodule"]), "courseid": .int(quiz["course"]),
+            "name": .str(quiz["name"]), "opens": .date(quiz["timeopen"]), "closes": .date(quiz["timeclose"]),
+            "time_limit_seconds": (quiz["timelimit"].int ?? 0) > 0 ? .int(quiz["timelimit"]) : .null,
+            // 0 means unlimited in Moodle.
+            "attempts_allowed": (quiz["attempts"].int ?? 0) > 0 ? .int(quiz["attempts"]) : .string("unlimited"),
+            "max_grade": .number(quiz["grade"]),
+        ]
+        Out.html(quiz["intro"], into: &row, key: "intro")
+        return row
+    }
+
+    /// Your attempts at `quiz`, in attempt order, with the grade scaled to the quiz's.
+    private func attempts(of quiz: JSON) async throws(MoodleError) -> [Out] {
+        guard let quizID = quiz["id"].int else { return [] }
+        let maxGrade = quiz["grade"].double
+        let sumGrades = quiz["sumgrades"].double
+        let answer = try await session.client.callJSON(
+            .quizUserAttempts, [.int("quizid", quizID), .value("status", "all"), .value("includepreviews", "0")])
+        return answer["attempts"].array
+            .sorted { ($0["attempt"].int ?? 0, $0["id"].int ?? 0) < ($1["attempt"].int ?? 0, $1["id"].int ?? 0) }
+            .map { attempt in
                 var grade: Out = .null
                 if let raw = attempt["sumgrades"].double, let maxGrade, let sumGrades, sumGrades > 0 {
                     grade = .double((raw / sumGrades * maxGrade * 100).rounded() / 100)
@@ -96,53 +205,102 @@ extension MoodleTools {
                     "attempt": .int(attempt["attempt"]), "state": .str(attempt["state"]),
                     "started": .date(attempt["timestart"]), "finished": .date(attempt["timefinish"]), "grade": grade,
                 ])
-            })
-            rows.append(.object(row))
-        }
-        return try Output.json(Out.array(rows))
+            }
     }
 
     // MARK: events_list
 
-    /// Action events (deadlines and the like) between two moments, only for allowed courses.
-    func events(_ arguments: Arguments) async throws(MoodleError) -> String {
-        let now = Int(Date().timeIntervalSince1970)
-        let from = try arguments.string("from").map { text throws(MoodleError) in try DateArgument.parse(text, name: "from") } ?? now
-        let to = try arguments.string("to").map { text throws(MoodleError) in try DateArgument.parse(text, name: "to", endOfDay: true) } ?? now + 30 * 86_400
-        guard to >= from else { throw .badArgument(name: "to", reason: "is earlier than 'from'.") }
+    /// Action events (deadlines and the like) of allowed courses, walked from the start of
+    /// the range in Moodle's order (date, then id), because Moodle pages them only by the
+    /// last id seen and other courses' events are dropped on the way.
+    func events(_ arguments: Arguments, budget: Budget) async throws(MoodleError) -> String {
+        let fromDate = try arguments.optionalDate("from_date")
+        let toDate = try arguments.optionalDate("to_date", endOfRange: true)
+        let eventID = try arguments.optionalIdentifier("eventid")
+        let page = try arguments.page(defaultLimit: ToolCatalog.defaultEventLimit, limits: ToolCatalog.eventLimitRange)
+        let window = try arguments.window()
+        // With no date at all the list starts now; to_date alone runs from the earliest.
+        let from = fromDate ?? (toDate == nil ? Int(Date().timeIntervalSince1970) : nil)
+        if let from, let toDate, toDate < from {
+            throw .badArgument(name: "to_date", reason: "is earlier than from_date.")
+        }
         guard !session.scope.allowed.isEmpty else { throw .noAllowedCourses }
         let names = Dictionary(uniqueKeysWithValues: try await session.allowedCourses().map { ($0.id, $0.fullname) })
 
-        var rows: [Out] = []
+        var matched: [Out?] = []
+        var scanned = 0
+        var requests = 0
         var after: Int?
-        // Moodle caps a page at 50; four pages is a ceiling, reported when reached.
-        var truncated = false
-        for page in 0..<4 {
-            var parameters: [FormParameter] = [.int("timesortfrom", from), .int("timesortto", to), .int("limitnum", 50)]
+        var exhausted = false
+        var notices = arguments.notices
+        // One past the page, so that a full page knows whether more follow.
+        let wanted = page.offset + page.limit + 1
+        while eventID != nil || matched.count < wanted {
+            if requests == ToolCatalog.scanRequests {
+                notices.append(Notice.scanStopped(after: scanned, things: "events", narrowBy: "from_date and to_date"))
+                break
+            }
+            if requests > 0, budget.isSpent {
+                notices.append(Notice.partial(after: scanned, things: "events", narrowBy: "from_date and to_date"))
+                break
+            }
+            var parameters: [FormParameter] = [.int("limitnum", ToolCatalog.eventsPerRequest)]
+            if let from { parameters.append(.int("timesortfrom", from)) }
+            if let toDate { parameters.append(.int("timesortto", toDate)) }
             if let after { parameters.append(.int("aftereventid", after)) }
             let answer = try await session.client.callJSON(.actionEvents, parameters)
+            requests += 1
             let events = answer["events"].array
+            scanned += events.count
             for event in events {
                 guard let courseID = event["course"]["id"].int, session.scope.contains(courseID) else { continue }
-                var row: [String: Out] = [
-                    "id": .int(event["id"]), "name": .str(event["name"]), "courseid": .int(courseID),
-                    "course": names[courseID].flatMap { $0 }.map(Out.string) ?? .null,
-                    "module": .str(event["modulename"]), "instance": .int(event["instance"]),
-                    "event_type": .str(event["eventtype"]), "date": .date(event["timesort"]),
-                    "start": .date(event["timestart"]), "overdue": .bool(event["overdue"]), "url": .url(event["url"]),
-                    "action": event["action"].isNull ? .null : .object([
-                        "name": .str(event["action"]["name"]), "actionable": .bool(event["action"]["actionable"]),
-                    ]),
-                ]
-                Out.html(event["description"], into: &row, key: "description")
-                rows.append(.object(row))
+                let row = Self.event(event, courseID: courseID, courseName: names[courseID] ?? nil)
+                if let eventID, event["id"].int == eventID {
+                    return Rows.one(
+                        row, characterOffset: window.characterOffset, maxCharacters: window.maxCharacters,
+                        notices: arguments.notices)
+                }
+                matched.append(row)
             }
-            guard events.count == 50, let last = answer["lastid"].int ?? events.last?["id"].int else { break }
+            guard events.count == ToolCatalog.eventsPerRequest, let last = answer["lastid"].int ?? events.last?["id"].int
+            else {
+                exhausted = true
+                break
+            }
             after = last
-            if page == 3 { truncated = true }
         }
-        return try Output.json(Out.object([
-            "from": .date(from), "to": .date(to), "events": .array(rows), "truncated": .bool(truncated),
-        ]))
+
+        if let eventID {
+            let reason =
+                exhausted
+                ? "no event \(eventID) of an allowed course between those dates. Call events_list with the dates it was listed under."
+                : "event \(eventID) was not among the first \(scanned) events between those dates. Narrow by from_date and to_date."
+            throw .badArgument(name: "eventid", reason: reason)
+        }
+        let rest = Array(matched.dropFirst(page.offset))
+        let extent: Extent =
+            exhausted ? .total(matched.count) : rest.count > page.limit ? .moreAfter : .stopped
+        let readOne = "events_list, passing its eventid and the same from_date and to_date"
+        return Rows.page(
+            Array(rest.prefix(page.limit)), offset: page.offset, limit: page.limit, extent: extent, things: "events",
+            notices: notices, readOne: ["description": readOne, "description_html": readOne]
+        ) { rows in
+            .object(["from_date": .date(from), "to_date": .date(toDate), "events": .array(rows)])
+        }
+    }
+
+    private static func event(_ event: JSON, courseID: Int, courseName: String?) -> Out {
+        var row: [String: Out] = [
+            "id": .int(event["id"]), "name": .str(event["name"]), "courseid": .int(courseID),
+            "course": courseName.map(Out.string) ?? .null,
+            "module": .str(event["modulename"]), "instance": .int(event["instance"]),
+            "event_type": .str(event["eventtype"]), "date": .date(event["timesort"]),
+            "start": .date(event["timestart"]), "overdue": .bool(event["overdue"]), "url": .url(event["url"]),
+            "action": event["action"].isNull ? .null : .object([
+                "name": .str(event["action"]["name"]), "actionable": .bool(event["action"]["actionable"]),
+            ]),
+        ]
+        Out.html(event["description"], into: &row, key: "description")
+        return .object(row)
     }
 }

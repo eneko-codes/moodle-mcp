@@ -3,7 +3,7 @@ import Foundation
 public enum MoodleMCPServer {
 
     public static let name = "moodle-mcp"
-    public static let version = "0.2.5"
+    public static let version = "1.0.0"
 
     /// Returned from `initialize`: what per-tool descriptions cannot say once.
     public static let instructions = """
@@ -26,6 +26,15 @@ public enum MoodleMCPServer {
         Text fields come twice: plain text with links kept as "text (url)", and the \
         original HTML in a field ending in _html. File URLs never carry a token.
 
+        Every listing returns one page in a stated order. When a result does not hold \
+        everything, its first lines say so in plain words, before the JSON, with the exact \
+        arguments for the rest: limit and offset for the next page, character_offset and \
+        max_characters for the rest of a text. A long text (summary, introduction, \
+        message, feedback) is clipped to \(ToolCatalog.clipWidth) characters in a listing; \
+        the notice names the id argument that reads that one item in full. events_list \
+        takes from_date and to_date, both inclusive. An argument a tool does not list is \
+        refused.
+
         Workflow: moodle_status first, and whenever a tool fails; courses_list for the \
         course ids the other tools take. course_contents for a course's materials, then \
         file_download with a file's url to save it under ~/Downloads/moodle-mcp/<course>/ \
@@ -39,9 +48,12 @@ public enum MoodleMCPServer {
         web service the token belongs to); notifications_list. Reading never marks anything as read. \
         profile_get gives only custom profile fields and the city.
 
-        assignments_list and quizzes_list make one request per activity and requests are \
-        paced, so asking for every course at once takes a while; pass a courseid when one \
-        course is enough.
+        Requests to Moodle are paced. assignments_list and quizzes_list make one request \
+        per item on the page, and they and events_list stop starting new ones after \
+        \(ToolCatalog.workBudget.components.seconds) seconds with a notice that the result \
+        is partial; pass a courseid when one course is enough. A call that has not \
+        answered after \(ToolCatalog.callTimeLimit.components.seconds) seconds is \
+        abandoned with a TIMED_OUT error.
 
         An error starting with TOKEN_INVALIDO means Moodle refused the token: it expired, \
         was revoked, or its service lacks access to a function. Tell the person to run \

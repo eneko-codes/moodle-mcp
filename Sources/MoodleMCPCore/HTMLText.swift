@@ -74,38 +74,3 @@ public enum HTMLText {
     }
 }
 
-/// A moment typed by a caller: `2026-11-20` (midnight in Madrid), `2026-11-20T09:00`
-/// (Madrid time) or `2026-11-20T09:00:00+01:00` (explicit offset).
-public enum DateArgument {
-    public static let help =
-        "Accepts 2026-11-20 (midnight, Europe/Madrid), 2026-11-20T09:00 (Europe/Madrid) or 2026-11-20T09:00:00+01:00."
-
-    /// `endOfDay` makes a bare date mean the last second of that day, so an inclusive end
-    /// such as `to=2026-11-20` keeps a deadline at 23:59 on the 20th.
-    public static func parse(_ text: String, name: String, endOfDay: Bool = false) throws(MoodleError) -> Int {
-        let trimmed = text.trimmingCharacters(in: .whitespaces)
-        if let date = try? Date(trimmed, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: false)) {
-            return Int(date.timeIntervalSince1970)
-        }
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = MoodleDate.timeZone
-        let pattern = #/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2}))?)?$/#
-        guard let match = trimmed.wholeMatch(of: pattern) else {
-            throw .badArgument(name: name, reason: "'\(trimmed)' is not a date. \(help)")
-        }
-        var components = DateComponents()
-        components.year = Int(match.1)
-        components.month = Int(match.2)
-        components.day = Int(match.3)
-        components.hour = match.4.flatMap { Int($0) } ?? 0
-        components.minute = match.5.flatMap { Int($0) } ?? 0
-        components.second = match.6.flatMap { Int($0) } ?? 0
-        guard let date = calendar.date(from: components), calendar.component(.day, from: date) == components.day else {
-            throw .badArgument(name: name, reason: "'\(trimmed)' is not a real date. \(help)")
-        }
-        if endOfDay, match.4 == nil, let next = calendar.date(byAdding: .day, value: 1, to: date) {
-            return Int(next.timeIntervalSince1970) - 1
-        }
-        return Int(date.timeIntervalSince1970)
-    }
-}
