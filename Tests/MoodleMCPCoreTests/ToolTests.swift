@@ -159,7 +159,7 @@ struct EveryToolTests {
         (ToolCatalog.statusName, [:]), (ToolCatalog.coursesName, [:]),
         (ToolCatalog.courseContentsName, ["courseid": .int(9001)]),
         (ToolCatalog.assignmentsName, [:]), (ToolCatalog.quizzesName, [:]),
-        (ToolCatalog.eventsName, ["from": .string("2026-11-01"), "to": .string("2026-12-31")]),
+        (ToolCatalog.eventsName, ["from_date": .string("2026-11-01"), "to_date": .string("2026-12-31")]),
         (ToolCatalog.notificationsName, [:]), (ToolCatalog.forumsName, [:]),
         (ToolCatalog.forumDiscussionsName, ["forumid": .int(60)]),
         (ToolCatalog.discussionPostsName, ["discussionid": .int(70)]),
@@ -355,7 +355,7 @@ struct CommunicationToolTests {
         #expect(text.contains("Nueva calificación"))
         #expect(text.contains("\"courseid\" : 9002"))
         #expect(!text.contains("Sin contexto"))
-        #expect(text.contains("\"hidden_other_or_unattributed\" : 2"))
+        #expect(text.hasPrefix("2 of these notifications belong to no allowed course, or to none that can be told, and are never shown.\n\n"))
     }
 
     @Test("No forbidden function is ever sent by any tool")

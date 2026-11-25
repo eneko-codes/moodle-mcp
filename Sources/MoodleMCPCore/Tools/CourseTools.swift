@@ -4,31 +4,119 @@ import Foundation
 /// course_contents and file_download.
 extension MoodleTools {
 
+    /// The course's sections and modules as one list in course order: each section, then
+    /// its modules. A section's place in the list is its own entry, so a page can end
+    /// inside a section and the next one start there.
     func courseContents(_ arguments: Arguments) async throws(MoodleError) -> String {
-        let courseID = try arguments.requiredInt("courseid")
+        let courseID = try arguments.requiredIdentifier("courseid")
+        let moduleID = try arguments.optionalIdentifier("cmid")
+        let sectionID = try arguments.optionalIdentifier("sectionid")
+        let page = try arguments.page(
+            defaultLimit: moduleID == nil ? ToolCatalog.defaultEntryLimit : ToolCatalog.defaultFileLimit,
+            limits: ToolCatalog.entryLimitRange)
+        let window = try arguments.window()
+        guard moduleID == nil || sectionID == nil else {
+            throw .badArgument(name: "sectionid", reason: "pass cmid or sectionid, not both.")
+        }
         try session.scope.validate(courseID)
         let course = try await session.course(courseID)
         let sections = try await session.contents(of: courseID, refresh: true)
-        let rendered: [Out] = sections.array.map { section in
-            var row: [String: Out] = [
-                "id": .int(section["id"]), "section": .int(section["section"]), "name": .str(section["name"]),
-                "visible": .bool(section["visible"]),
-                "modules": .array(section["modules"].array.map(Self.module)),
-            ]
-            Out.html(section["summary"], into: &row, key: "summary")
-            return .object(row)
+        let heading: Out = .object(["id": .int(courseID), "fullname": course?.fullname.map(Out.string) ?? .null])
+
+        if let sectionID {
+            guard let section = sections.array.first(where: { $0["id"].int == sectionID }) else {
+                throw .badArgument(name: "sectionid", reason: "course \(courseID) has no section \(sectionID). Call course_contents.")
+            }
+            return Rows.one(
+                Self.section(section), characterOffset: window.characterOffset, maxCharacters: window.maxCharacters,
+                notices: arguments.notices
+            ) { .object(["course": heading, "section": $0]) }
         }
-        return try Output.json(Out.object([
-            "course": .object(["id": .int(courseID), "fullname": course?.fullname.map(Out.string) ?? .null]),
-            "sections": .array(rendered),
-        ]))
+
+        if let moduleID {
+            for section in sections.array {
+                guard let module = section["modules"].array.first(where: { $0["id"].int == moduleID }) else { continue }
+                return Self.oneModule(
+                    module, section: section, heading: heading, page: page, window: window, notices: arguments.notices)
+            }
+            throw .badArgument(name: "cmid", reason: "course \(courseID) has no module \(moduleID). Call course_contents.")
+        }
+
+        var entries: [Out?] = []
+        for section in sections.array {
+            entries.append(Self.section(section))
+            for module in section["modules"].array {
+                entries.append(Self.module(module, section: section, files: ToolCatalog.filesPerModule))
+            }
+        }
+        return Rows.page(
+            Array(entries.dropFirst(page.offset)), offset: page.offset, limit: page.limit,
+            extent: .total(entries.count), things: "entries", notices: arguments.notices,
+            readOne: [
+                "summary": "course_contents, passing its sectionid", "summary_html": "course_contents, passing its sectionid",
+                "description": "course_contents, passing its cmid", "description_html": "course_contents, passing its cmid",
+            ],
+            extra: { shown in
+                let unshown = shown.reduce(0) { sum, entry in
+                    guard case .object(let fields) = entry, case .int(let count)? = fields["file_count"],
+                        case .array(let files)? = fields["files"]
+                    else { return sum }
+                    return sum + count - files.count
+                }
+                return unshown > 0
+                    ? [Notice.notShown(count: unshown, things: "files of the modules on this page", pass: "cmid=<the module's id>")]
+                    : []
+            }
+        ) { .object(["course": heading, "entries": .array($0)]) }
+    }
+
+    /// One module with its description windowed and its files paged.
+    private static func oneModule(
+        _ module: JSON, section: JSON, heading: Out, page: (limit: Int, offset: Int),
+        window: (characterOffset: Int, maxCharacters: Int), notices: [String]
+    ) -> String {
+        let files = module["contents"].array.map(file)
+        return ToolStandard.fitting(page.limit) { size in
+            let shown = Array(files.dropFirst(page.offset).prefix(size))
+            var lines = notices
+            if let position = Notice.page(offset: page.offset, count: shown.count, total: files.count, things: "files") {
+                lines.append(position)
+            }
+            var row = Self.moduleFields(module, section: section)
+            row["file_count"] = .int(files.count)
+            row["files"] = .array(shown)
+            return Rows.one(
+                .object(row), characterOffset: window.characterOffset, maxCharacters: window.maxCharacters,
+                notices: lines
+            ) { .object(["course": heading, "module": $0]) }
+        }
+    }
+
+    static func section(_ section: JSON) -> Out {
+        var row: [String: Out] = [
+            "kind": .string("section"), "id": .int(section["id"]), "section": .int(section["section"]),
+            "name": .str(section["name"]), "visible": .bool(section["visible"]),
+            "module_count": .int(section["modules"].array.count),
+        ]
+        Out.html(section["summary"], into: &row, key: "summary")
+        return .object(row)
     }
 
     /// Completion states from `completiondata.state`.
     static let completionStates = [0: "incomplete", 1: "complete", 2: "complete_pass", 3: "complete_fail"]
 
-    static func module(_ module: JSON) -> Out {
+    /// A module entry of a listing, with at most `files` of its files.
+    static func module(_ module: JSON, section: JSON, files limit: Int) -> Out {
+        var row = moduleFields(module, section: section)
+        let files = module["contents"].array
+        row["file_count"] = .int(files.count)
+        row["files"] = .array(files.prefix(limit).map(file))
+        return .object(row)
+    }
+
+    static func moduleFields(_ module: JSON, section: JSON) -> [String: Out] {
         var row: [String: Out] = [
+            "kind": .string("module"), "section": .int(section["section"]),
             "id": .int(module["id"]), "instance": .int(module["instance"]), "type": .str(module["modname"]),
             "name": .str(module["name"]), "visible": .bool(module["visible"]),
             "available_to_you": .bool(module["uservisible"]), "url": .url(module["url"]),
@@ -47,23 +135,27 @@ extension MoodleTools {
                 "automatic": .bool(completion["isautomatic"]),
             ])
         }
-        row["files"] = .array(module["contents"].array.map { content in
-            .object([
-                "kind": .str(content["type"]), "filename": .str(content["filename"]),
-                "size_bytes": .int(content["filesize"]), "modified": .date(content["timemodified"]),
-                "mimetype": .str(content["mimetype"]), "url": .url(content["fileurl"]),
-            ])
-        })
-        return .object(row)
+        return row
+    }
+
+    static func file(_ content: JSON) -> Out {
+        .object([
+            "kind": .str(content["type"]), "filename": .str(content["filename"]),
+            "size_bytes": .int(content["filesize"]), "modified": .date(content["timemodified"]),
+            "mimetype": .str(content["mimetype"]), "url": .url(content["fileurl"]),
+        ])
     }
 
     // MARK: file_download
 
     /// The one tool that writes, and only under `~/Downloads/moodle-mcp/<course>/`.
     func fileDownload(_ arguments: Arguments) async throws(MoodleError) -> String {
-        let courseID = try arguments.requiredInt("courseid")
+        let courseID = try arguments.requiredIdentifier("courseid")
+        let raw = try arguments.requiredString("url")
         try session.scope.validate(courseID)
-        guard let raw = try arguments.string("url"), let url = URL(string: raw) else { throw .missingArgument("url") }
+        guard let url = URL(string: raw) else {
+            throw .badArgument(name: "url", reason: "'\(ToolStandard.echo(raw))' is not a URL.")
+        }
 
         // The file must belong to a module of this course: its pluginfile context must be
         // one of the course's module contexts. Host and path are checked first so nothing

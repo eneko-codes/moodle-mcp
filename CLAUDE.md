@@ -107,6 +107,22 @@ the one that forgot.
 `_list` / `_get` suffixes. Answers are JSON built field by field from `Out`;
 nothing Moodle sends reaches an answer unless a tool names it.
 
+**How a tool keeps to the tool standard here.** Sizes, ranges and time limits are constants
+in `ToolCatalog`, and the schemas, the descriptions and the instructions quote them by
+interpolation, never as literals; README and manifest prose carries no figure. `Arguments`
+refuses a name the schema does not list (so a renamed argument fails), moves a quantity
+(`limit`, `offset`, a window) into its range and collects the sentence that says so in
+`notices`, and refuses an id outside `identifierRange`. Every listing goes through
+`Rows.page`: notices, then the page's position (`Notice.page`, or "more exist" where Moodle
+gives no total), the rows it never shows (other courses), and each long text clipped to
+`clipWidth` (`Notice.clipped`, naming the id argument that reads it), all before the JSON.
+That id argument returns one item through `Rows.one`, which windows its long texts with
+`character_offset` and `max_characters`. Both render through `ToolStandard.fitting`. Every
+text comes twice (plain and `_html`), and the limits count both. A call runs inside
+`Deadline` (`callTimeLimit`); tools that make one request per item stop starting new ones
+after `workBudget` and add `Notice.partial`. `BoundsTests` holds all of it: a new listing
+gets an entry in its `listings`, and a new id argument one in `singles`.
+
 Course filtering where Moodle's answer does not say the course:
 - `forum_discussions`: the forum must be one `mod_forum_get_forums_by_courses` lists for
   an allowed course, checked before asking.

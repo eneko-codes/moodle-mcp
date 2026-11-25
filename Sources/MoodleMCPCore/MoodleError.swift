@@ -30,6 +30,11 @@ public enum MoodleError: Error, Equatable, Sendable {
     case configuration(String)
     case missingArgument(String)
     case badArgument(name: String, reason: String)
+    /// An argument the tool's schema does not list, with the names it does.
+    case unknownArgument(name: String, allowed: [String])
+    /// The call did not finish within its deadline. `writes` is set for the tool that
+    /// writes a file, whose file may still have been saved.
+    case timedOut(seconds: Int, writes: Bool)
 
     /// The stable code at the start of the message, so a caller can branch on it.
     public var code: String {
@@ -51,6 +56,8 @@ public enum MoodleError: Error, Equatable, Sendable {
         case .configuration: "CONFIGURATION"
         case .missingArgument: "MISSING_ARGUMENT"
         case .badArgument: "BAD_ARGUMENT"
+        case .unknownArgument: "UNKNOWN_ARGUMENT"
+        case .timedOut: "TIMED_OUT"
         }
     }
 
@@ -97,9 +104,9 @@ public enum MoodleError: Error, Equatable, Sendable {
                 Terminal to choose the courses.
                 """
         case .moodleException(let errorCode, let message):
-            return "Moodle refused the request (\(errorCode)): \(message)"
+            return "Moodle refused the request (\(Self.quoted(errorCode))): \(Self.quoted(message))"
         case .loginRefused(let errorCode, let message):
-            return "Moodle refused the login (\(errorCode)): \(message)"
+            return "Moodle refused the login (\(Self.quoted(errorCode))): \(Self.quoted(message))"
         case .messagingDisabled:
             return """
                 This Moodle site has internal messaging turned off, so there are no \
@@ -116,8 +123,29 @@ public enum MoodleError: Error, Equatable, Sendable {
         case .missingArgument(let name):
             return "Missing required argument '\(name)'."
         case .badArgument(let name, let reason):
-            return "Argument '\(name)' is not valid: \(reason)"
+            return "Argument '\(ToolStandard.echo(name))' is not valid: \(reason)"
+        case .unknownArgument(let name, let allowed):
+            let takes = allowed.isEmpty ? "This tool takes no arguments." : "It takes: \(allowed.joined(separator: ", "))."
+            return "'\(ToolStandard.echo(name))' is not an argument of this tool. \(takes)"
+        case .timedOut(let seconds, let writes):
+            let effect =
+                writes
+                ? "The file may still have been saved: look under ~/Downloads/moodle-mcp/ before trying again."
+                : "Nothing was changed, because this tool only reads."
+            return """
+                The call did not finish within \(seconds) seconds and was abandoned. \(effect) \
+                Moodle may be slow or not answering: ask for less (one courseid, a smaller \
+                limit, a narrower date range), or call moodle_status to see whether the site \
+                answers at all.
+                """
         }
+    }
+
+    /// The most of Moodle's own text an error repeats: enough for its reason, never a page.
+    static let quotedWidth = 500
+
+    private static func quoted(_ text: String) -> String {
+        text.count > quotedWidth ? String(text.prefix(quotedWidth)) + "…" : text
     }
 
     /// The same error with any free text Moodle supplied scrubbed of `token`.
