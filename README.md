@@ -57,7 +57,7 @@ Not affiliated with, endorsed by, or connected to Moodle Pty Ltd.
 ### 1. Build the bundle
 
 ```bash
-security find-identity -v -p codesigning     # copy the hash of an Apple Development identity
+security find-identity -v -p codesigning     # copy the hash of an Apple Development or Developer ID Application identity
 MCPB_SIGN_IDENTITY="<identity hash>" ./scripts/pack.sh
 ```
 
